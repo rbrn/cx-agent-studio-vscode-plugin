@@ -57,6 +57,32 @@ export interface EvaluationInfo {
   manifestError?: string;
 }
 
+export interface InstructionSection {
+  name: string;
+  startLine: number;
+  endLine: number;
+}
+
+export interface InstructionReference {
+  type: "agent" | "tool";
+  name: string;
+  line: number;
+}
+
+export interface InstructionToolCall {
+  operation: string;
+  line: number;
+}
+
+export interface InstructionInfo {
+  agentName: string;
+  filePath: string;
+  sections: InstructionSection[];
+  references: InstructionReference[];
+  toolCalls: InstructionToolCall[];
+  parseError?: string;
+}
+
 export interface EnvironmentInfo {
   filePath: string;
   data: Record<string, unknown> | null;
@@ -78,6 +104,7 @@ export interface PackageModel {
   agentInfos: AgentInfo[];
   toolsetInfos: ToolsetInfo[];
   evaluationInfos: EvaluationInfo[];
+  instructionInfos: InstructionInfo[];
   guardrailDirs: string[];
   environment: EnvironmentInfo | null;
   directTools: Set<string>;

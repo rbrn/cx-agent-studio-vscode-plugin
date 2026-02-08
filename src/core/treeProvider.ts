@@ -21,6 +21,7 @@ type NodeKind =
   | "evaluation"
   | "guardrail"
   | "tool"
+  | "instruction"
   | "file"
   | "info";
 
@@ -171,6 +172,54 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       if (tools.length > 0) { details.push(`tools: ${tools.join(", ")}`); }
       if (toolsets.length > 0) { details.push(`toolsets: ${toolsets.join(", ")}`); }
 
+      // Build instruction child node
+      const instrInfo = model.instructionInfos.find((info) => info.agentName === agent.name);
+      const instrChildren: TreeNode[] = [];
+      if (instrInfo) {
+        const instrIssues = issues.filter((i) =>
+          i.file === instrInfo.filePath && i.code.startsWith("CES_INSTRUCTION"),
+        );
+        const sectionList = instrInfo.sections.map((s) => s.name).join(", ") || "none";
+        const refCount = instrInfo.references.length;
+        const callCount = instrInfo.toolCalls.length;
+
+        const instrDetailNodes: TreeNode[] = [];
+        instrDetailNodes.push({
+          kind: "info",
+          label: `Sections: ${sectionList}`,
+          status: "none",
+        });
+        if (refCount > 0) {
+          instrDetailNodes.push({
+            kind: "info",
+            label: `References: ${refCount} (${instrInfo.references.filter((r) => r.type === "agent").length} agent, ${instrInfo.references.filter((r) => r.type === "tool").length} tool)`,
+            status: "none",
+          });
+        }
+        if (callCount > 0) {
+          instrDetailNodes.push({
+            kind: "info",
+            label: `Tool calls: ${callCount}`,
+            status: "none",
+          });
+        }
+        if (instrIssues.length > 0) {
+          instrDetailNodes.push(...instrIssues.map((i) => this.issueNode(i)));
+        }
+
+        instrChildren.push({
+          kind: "instruction",
+          label: "instruction.txt",
+          description: `${this.statusBadge(instrIssues)}  §${instrInfo.sections.length} refs:${refCount}`,
+          filePath: instrInfo.filePath,
+          status: this.statusFromIssues(instrIssues),
+          iconId: "file-text",
+          children: instrDetailNodes,
+        });
+      }
+
+      const issueChildren = agentIssues.filter((i) => !i.code.startsWith("CES_INSTRUCTION")).map((i) => this.issueNode(i));
+
       return {
         kind: "agent" as NodeKind,
         label: agent.name,
@@ -178,11 +227,11 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
         filePath: agent.manifestPath,
         status: this.statusFromIssues(agentIssues),
         tooltip: `Agent: ${agent.name}\n${details.join("\n")}`,
-        children: agentIssues.length > 0 ? agentIssues.map((i) => this.issueNode(i)) : undefined,
+        children: [...instrChildren, ...issueChildren].length > 0 ? [...instrChildren, ...issueChildren] : undefined,
       };
     });
 
-    const allAgentIssues = issues.filter((i) => i.code.startsWith("CES_AGENT") || i.code.startsWith("CES_CHILD") || i.code === "CES_ROOT_AGENT_DIR_MISSING" || i.code === "CES_ROOT_AGENT_MANIFEST_MISSING");
+    const allAgentIssues = issues.filter((i) => i.code.startsWith("CES_AGENT") || i.code.startsWith("CES_CHILD") || i.code === "CES_ROOT_AGENT_DIR_MISSING" || i.code === "CES_ROOT_AGENT_MANIFEST_MISSING" || i.code.startsWith("CES_INSTRUCTION"));
     return {
       kind: "category",
       label: `Agents (${model.agentInfos.length})`,

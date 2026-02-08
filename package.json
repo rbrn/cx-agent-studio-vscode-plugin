@@ -22,6 +22,33 @@
     "onCommand:cesValidator.clearDiagnostics"
   ],
   "contributes": {
+    "languages": [
+      {
+        "id": "ces-instruction",
+        "aliases": [
+          "CES Instruction"
+        ],
+        "filenamePatterns": [
+          "**/agents/*/instruction.txt",
+          "**/global_instruction.txt"
+        ],
+        "configuration": {
+          "comments": {
+            "blockComment": [
+              "<!--",
+              "-->"
+            ]
+          }
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ces-instruction",
+        "scopeName": "text.xml.ces-instruction",
+        "path": "./syntaxes/ces-instruction.tmLanguage.json"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

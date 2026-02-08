@@ -8,6 +8,7 @@ import * as path from "path";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
 import { AgentInfo, PackageModel, ValidationIssue, ValidationSeverity } from "./types";
+import { REQUIRED_SECTIONS, KNOWN_SECTIONS } from "./instructionParser";
 
 const ROOT_DEPTH_LIMIT = 2;
 const TOOLSET_DEPTH_LIMIT = 3;
@@ -21,6 +22,7 @@ export function runRules(model: PackageModel): ValidationIssue[] {
   validateAgents(model, issues);
   validateToolsets(model, issues);
   validateEvaluations(model, issues);
+  validateInstructions(model, issues);
   validateEnvironment(model, issues);
 
   issues.sort((left, right) => {
@@ -692,6 +694,106 @@ function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): vo
             findLineContaining(evalInfo.manifestPath, toolName),
           );
         }
+      }
+    }
+  }
+}
+
+function validateInstructions(model: PackageModel, issues: ValidationIssue[]): void {
+  if (model.instructionInfos.length === 0) {
+    return;
+  }
+
+  const agentNames = new Set(model.agentInfos.map((a) => a.name));
+
+  for (const info of model.instructionInfos) {
+    // Skip global instruction from structural checks
+    if (info.agentName === "__global__") {
+      continue;
+    }
+
+    if (info.parseError) {
+      pushIssue(
+        issues,
+        "CES_INSTRUCTION_PARSE_ERROR",
+        `Instruction parse error for '${info.agentName}': ${info.parseError}`,
+        "error",
+        info.filePath,
+        1,
+      );
+    }
+
+    // Check required sections
+    const sectionNames = new Set(info.sections.map((s) => s.name));
+    for (const required of REQUIRED_SECTIONS) {
+      if (!sectionNames.has(required)) {
+        pushIssue(
+          issues,
+          "CES_INSTRUCTION_MISSING_SECTION",
+          `Instruction for '${info.agentName}' is missing required <${required}> section`,
+          "warning",
+          info.filePath,
+          1,
+        );
+      }
+    }
+
+    // Validate {@AGENT: name} references resolve to known agents
+    for (const ref of info.references) {
+      if (ref.type === "agent" && !agentNames.has(ref.name)) {
+        pushIssue(
+          issues,
+          "CES_INSTRUCTION_AGENT_REF_UNKNOWN",
+          `Instruction for '${info.agentName}' references unknown agent '${ref.name}' at line ${ref.line}`,
+          "error",
+          info.filePath,
+          ref.line,
+        );
+      }
+    }
+
+    // Validate {@TOOL: name} references resolve to known direct tools
+    for (const ref of info.references) {
+      if (ref.type === "tool" && model.directTools.size > 0 && !model.directTools.has(ref.name)) {
+        pushIssue(
+          issues,
+          "CES_INSTRUCTION_TOOL_REF_UNKNOWN",
+          `Instruction for '${info.agentName}' references unknown tool '${ref.name}' at line ${ref.line}`,
+          "warning",
+          info.filePath,
+          ref.line,
+        );
+      }
+    }
+
+    // Validate tool_call() operations in examples
+    for (const call of info.toolCalls) {
+      const parts = call.operation.split(".");
+      const toolsetName = parts.length > 1 ? parts[0] : null;
+      const opName = parts.length > 1 ? parts[1] : parts[0];
+
+      // Check if toolset prefix matches a known toolset
+      if (toolsetName) {
+        const toolsetNames = new Set(model.toolsetInfos.map((t) => t.name));
+        if (!toolsetNames.has(toolsetName)) {
+          pushIssue(
+            issues,
+            "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET",
+            `Instruction for '${info.agentName}': tool_call '${call.operation}' references unknown toolset '${toolsetName}' at line ${call.line}`,
+            "warning",
+            info.filePath,
+            call.line,
+          );
+        }
+      } else if (opName && model.directTools.size > 0 && !model.directTools.has(opName)) {
+        pushIssue(
+          issues,
+          "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOL",
+          `Instruction for '${info.agentName}': tool_call '${call.operation}' is not a known direct tool at line ${call.line}`,
+          "warning",
+          info.filePath,
+          call.line,
+        );
       }
     }
   }

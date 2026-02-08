@@ -6,7 +6,8 @@
 import * as fs from "fs";
 import * as path from "path";
 import { parseFileByExtension, parseJsonFile } from "./parsers";
-import { AgentInfo, EvaluationInfo, PackageModel, ToolsetInfo } from "./types";
+import { parseInstructionFile } from "./instructionParser";
+import { AgentInfo, EvaluationInfo, InstructionInfo, PackageModel, ToolsetInfo } from "./types";
 
 const SCHEMA_EXTENSIONS = new Set([".yaml", ".yml", ".json"]);
 
@@ -39,6 +40,7 @@ export function buildPackageModel(rootPath: string): PackageModel {
   const agentInfos = collectAgentInfos(rootPath);
   const toolsetInfos = collectToolsetInfos(rootPath);
   const evaluationInfos = collectEvaluationInfos(rootPath);
+  const instructionInfos = collectInstructionInfos(rootPath, agentInfos);
   const guardrailDirs = collectImmediateDirectories(path.join(rootPath, "guardrails"));
 
   const { directTools, openApiOperations } = buildToolInventory(agentInfos, toolsetInfos);
@@ -70,6 +72,7 @@ export function buildPackageModel(rootPath: string): PackageModel {
     agentInfos,
     toolsetInfos,
     evaluationInfos,
+    instructionInfos,
     guardrailDirs,
     environment,
     directTools,
@@ -267,6 +270,25 @@ function buildToolInventory(
   }
 
   return { directTools, openApiOperations };
+}
+
+function collectInstructionInfos(rootPath: string, agentInfos: AgentInfo[]): InstructionInfo[] {
+  const results: InstructionInfo[] = [];
+
+  for (const agent of agentInfos) {
+    const instructionPath = path.join(agent.dirPath, "instruction.txt");
+    if (fs.existsSync(instructionPath)) {
+      results.push(parseInstructionFile(instructionPath, agent.name));
+    }
+  }
+
+  // Also check for global_instruction.txt at root
+  const globalInstructionPath = path.join(rootPath, "global_instruction.txt");
+  if (fs.existsSync(globalInstructionPath)) {
+    results.push(parseInstructionFile(globalInstructionPath, "__global__"));
+  }
+
+  return results;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
