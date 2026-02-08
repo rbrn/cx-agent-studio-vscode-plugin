@@ -17,119 +17,140 @@ function isCesInstruction(uri: vscode.Uri): boolean {
 
 function setLanguageForInstructions(document: vscode.TextDocument): void {
   if (document.languageId !== "ces-instruction" && isCesInstruction(document.uri)) {
-    vscode.languages.setTextDocumentLanguage(document, "ces-instruction");
+    vscode.languages.setTextDocumentLanguage(document, "ces-instruction").then(
+      undefined,
+      () => { /* language not yet registered — ignore */ },
+    );
   }
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const collection = vscode.languages.createDiagnosticCollection("ces-validator");
-  const orchestrator = new ValidationOrchestrator(collection);
-  const treeProvider = new CesPackageTreeProvider();
+  const outputChannel = vscode.window.createOutputChannel("CES Validator");
+  context.subscriptions.push(outputChannel);
 
-  context.subscriptions.push(collection);
+  let orchestrator: ValidationOrchestrator;
+  let treeProvider: CesPackageTreeProvider;
 
-  // Force-set language for any already-open instruction.txt files
-  for (const document of vscode.workspace.textDocuments) {
-    setLanguageForInstructions(document);
-  }
+  try {
+    const collection = vscode.languages.createDiagnosticCollection("ces-validator");
+    orchestrator = new ValidationOrchestrator(collection);
+    treeProvider = new CesPackageTreeProvider();
 
-  // Set language when new documents are opened
-  context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument((document) => {
+    context.subscriptions.push(collection);
+
+    // ── 1. Register tree view + commands synchronously (MUST NOT throw) ──
+
+    const treeView = vscode.window.createTreeView("cesPackageExplorer", {
+      treeDataProvider: treeProvider,
+      showCollapseAll: true,
+    });
+    context.subscriptions.push(treeView);
+
+    context.subscriptions.push(
+      orchestrator.onDidValidate((roots) => {
+        treeProvider.setPackageRoots(roots);
+        treeProvider.refresh();
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.refreshTree", async () => {
+        try {
+          await orchestrator.validateAllPackages();
+        } catch (err) {
+          outputChannel.appendLine(`[CES] refreshTree error: ${err}`);
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.validateCurrentPackage", async () => {
+        try {
+          const activeUri = vscode.window.activeTextEditor?.document.uri;
+          if (activeUri) {
+            await orchestrator.validatePackageForUri(activeUri);
+            return;
+          }
+          await orchestrator.validateAllPackages();
+        } catch (err) {
+          outputChannel.appendLine(`[CES] validateCurrentPackage error: ${err}`);
+        }
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.clearDiagnostics", () => {
+        orchestrator.clearDiagnostics();
+      }),
+    );
+
+    // ── 2. Instruction language detection ────────────────────────────────
+
+    for (const document of vscode.workspace.textDocuments) {
       setLanguageForInstructions(document);
-    }),
-  );
-
-  // Register the sidebar tree view
-  const treeView = vscode.window.createTreeView("cesPackageExplorer", {
-    treeDataProvider: treeProvider,
-    showCollapseAll: true,
-  });
-  context.subscriptions.push(treeView);
-
-  // Refresh tree whenever validation runs
-  context.subscriptions.push(
-    orchestrator.onDidValidate((roots) => {
-      treeProvider.setPackageRoots(roots);
-      treeProvider.refresh();
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cesValidator.refreshTree", async () => {
-      await orchestrator.validateAllPackages();
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cesValidator.validateCurrentPackage", async () => {
-      const activeUri = vscode.window.activeTextEditor?.document.uri;
-      if (activeUri) {
-        await orchestrator.validatePackageForUri(activeUri);
-        return;
-      }
-
-      await orchestrator.validateAllPackages();
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cesValidator.clearDiagnostics", () => {
-      orchestrator.clearDiagnostics();
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument(async (document) => {
-      if (!orchestrator.isRelevantUri(document.uri)) {
-        return;
-      }
-
-      await orchestrator.validatePackageForUri(document.uri);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument((document) => {
-      if (!orchestrator.isRelevantUri(document.uri)) {
-        return;
-      }
-
-      orchestrator.scheduleValidationForUri(document.uri);
-    }),
-  );
-
-  const watcher = vscode.workspace.createFileSystemWatcher("**/*");
-  const handleFsEvent = (uri: vscode.Uri): void => {
-    if (!orchestrator.isRelevantUri(uri)) {
-      return;
     }
 
-    orchestrator.scheduleValidationForUri(uri);
-  };
+    context.subscriptions.push(
+      vscode.workspace.onDidOpenTextDocument((document) => {
+        setLanguageForInstructions(document);
 
-  context.subscriptions.push(
-    watcher,
-    watcher.onDidCreate(handleFsEvent),
-    watcher.onDidChange(handleFsEvent),
-    watcher.onDidDelete(handleFsEvent),
-  );
-
-  context.subscriptions.push(
-    vscode.workspace.onDidRenameFiles((event) => {
-      for (const rename of event.files) {
-        if (orchestrator.isRelevantUri(rename.oldUri)) {
-          orchestrator.scheduleValidationForUri(rename.oldUri);
+        if (orchestrator.isRelevantUri(document.uri)) {
+          orchestrator.validatePackageForUri(document.uri).catch((err) => {
+            outputChannel.appendLine(`[CES] onDidOpen validation error: ${err}`);
+          });
         }
+      }),
+    );
 
-        if (orchestrator.isRelevantUri(rename.newUri)) {
-          orchestrator.scheduleValidationForUri(rename.newUri);
+    // ── 3. File watchers ─────────────────────────────────────────────────
+
+    context.subscriptions.push(
+      vscode.workspace.onDidSaveTextDocument((document) => {
+        if (orchestrator.isRelevantUri(document.uri)) {
+          orchestrator.scheduleValidationForUri(document.uri);
         }
+      }),
+    );
+
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*");
+    const handleFsEvent = (uri: vscode.Uri): void => {
+      if (orchestrator.isRelevantUri(uri)) {
+        orchestrator.scheduleValidationForUri(uri);
       }
-    }),
-  );
+    };
 
-  await orchestrator.validateAllPackages();
+    context.subscriptions.push(
+      watcher,
+      watcher.onDidCreate(handleFsEvent),
+      watcher.onDidChange(handleFsEvent),
+      watcher.onDidDelete(handleFsEvent),
+    );
+
+    context.subscriptions.push(
+      vscode.workspace.onDidRenameFiles((event) => {
+        for (const rename of event.files) {
+          if (orchestrator.isRelevantUri(rename.oldUri)) {
+            orchestrator.scheduleValidationForUri(rename.oldUri);
+          }
+          if (orchestrator.isRelevantUri(rename.newUri)) {
+            orchestrator.scheduleValidationForUri(rename.newUri);
+          }
+        }
+      }),
+    );
+
+  } catch (err) {
+    // Activation MUST NOT throw — log and return gracefully
+    outputChannel.appendLine(`[CES] Activation error (sync): ${err}`);
+    outputChannel.show(true);
+    return;
+  }
+
+  // ── 4. Initial scan (async, fire-and-forget — never rejects activate) ──
+
+  orchestrator.validateAllPackages().catch((err) => {
+    outputChannel.appendLine(`[CES] Initial scan error: ${err}`);
+  });
 }
 
 export function deactivate(): void {
