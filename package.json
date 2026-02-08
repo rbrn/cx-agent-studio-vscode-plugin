@@ -18,15 +18,26 @@
   },
   "activationEvents": [
     "onStartupFinished",
+    "onLanguage:ces-instruction",
     "onCommand:cesValidator.validateCurrentPackage",
     "onCommand:cesValidator.clearDiagnostics"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "files.associations": {
+        "**/agents/*/instruction.txt": "ces-instruction",
+        "**/global_instruction.txt": "ces-instruction"
+      }
+    },
     "languages": [
       {
         "id": "ces-instruction",
         "aliases": [
-          "CES Instruction"
+          "CES Instruction",
+          "CES Agent Instruction"
+        ],
+        "filenames": [
+          "global_instruction.txt"
         ],
         "filenamePatterns": [
           "**/agents/*/instruction.txt",

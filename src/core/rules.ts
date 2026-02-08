@@ -8,7 +8,7 @@ import * as path from "path";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
 import { AgentInfo, PackageModel, ValidationIssue, ValidationSeverity } from "./types";
-import { REQUIRED_SECTIONS, KNOWN_SECTIONS } from "./instructionParser";
+import { REQUIRED_SECTIONS } from "./instructionParser";
 
 const ROOT_DEPTH_LIMIT = 2;
 const TOOLSET_DEPTH_LIMIT = 3;

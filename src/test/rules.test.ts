@@ -43,7 +43,7 @@ function baseValidFixture(): Record<string, string> {
       null,
       2,
     ),
-    "agents/voice_banking_agent/instruction.txt": "Root agent instruction",
+    "agents/voice_banking_agent/instruction.txt": "<role>\nRoot agent instruction\n</role>",
     "agents/location_services_agent/location_services_agent.json": JSON.stringify(
       {
         displayName: "location_services_agent",
@@ -53,7 +53,7 @@ function baseValidFixture(): Record<string, string> {
       null,
       2,
     ),
-    "agents/location_services_agent/instruction.txt": "Child agent instruction",
+    "agents/location_services_agent/instruction.txt": "<role>\nChild agent instruction\n</role>",
     "toolsets/location/location.json": JSON.stringify(
       {
         displayName: "location",
@@ -435,4 +435,199 @@ test("L-01: toolCall referencing a valid direct tool passes", () => {
   const issues = runValidation(files);
   assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION"), false);
   assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_UNKNOWN"), false);
+});
+
+// ── Instruction parsing & validation tests ────────────────────────────────
+
+test("instruction with all sections parses correctly", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main banking agent.",
+    "</role>",
+    "<persona>",
+    "    Friendly and professional.",
+    "</persona>",
+    "<constraints>",
+    "    1. Be concise.",
+    "</constraints>",
+    "<taskflow>",
+    "    <subtask name=\"Main\">",
+    "        <step name=\"Greet\">",
+    "            <trigger>User says hello</trigger>",
+    "            <action>Greet back</action>",
+    "        </step>",
+    "    </subtask>",
+    "</taskflow>",
+    "<examples>",
+    "    <example>",
+    "        <user>Hello</user>",
+    "        <agent>Welcome!</agent>",
+    "    </example>",
+    "</examples>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_MISSING_SECTION"), false);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_PARSE_ERROR"), false);
+});
+
+test("instruction missing required <role> section produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<persona>",
+    "    Friendly and professional.",
+    "</persona>",
+    "<constraints>",
+    "    1. Be concise.",
+    "</constraints>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_MISSING_SECTION"), true);
+  const sectionIssue = issues.find((i) => i.code === "CES_INSTRUCTION_MISSING_SECTION");
+  assert.ok(sectionIssue?.message.includes("<role>"));
+});
+
+test("instruction with {@AGENT:} reference to unknown agent produces error", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "</role>",
+    "<constraints>",
+    "    Transfer to {@AGENT: nonexistent_agent} for help.",
+    "</constraints>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_AGENT_REF_UNKNOWN"), true);
+  const refIssue = issues.find((i) => i.code === "CES_INSTRUCTION_AGENT_REF_UNKNOWN");
+  assert.ok(refIssue?.message.includes("nonexistent_agent"));
+});
+
+test("instruction with {@AGENT:} reference to known agent passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "</role>",
+    "<constraints>",
+    "    Transfer to {@AGENT: location_services_agent} for locations.",
+    "</constraints>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_AGENT_REF_UNKNOWN"), false);
+});
+
+test("instruction with {@TOOL:} reference to unknown tool produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "</role>",
+    "<constraints>",
+    "    Use {@TOOL: unknown_tool} to do something.",
+    "</constraints>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_TOOL_REF_UNKNOWN"), true);
+});
+
+test("instruction with tool_call referencing unknown toolset produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "</role>",
+    "<examples>",
+    "    <example>",
+    "        <user>Search</user>",
+    "        <tool_call>unknown_toolset.doSomething(query=\"test\")</tool_call>",
+    "    </example>",
+    "</examples>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET"), true);
+});
+
+test("instruction with tool_call referencing known toolset passes", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the location agent.",
+    "</role>",
+    "<examples>",
+    "    <example>",
+    "        <user>Find branches</user>",
+    "        <tool_call>location.searchBranches(city=\"Berlin\")</tool_call>",
+    "    </example>",
+    "</examples>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET"), false);
+});
+
+test("instruction with unclosed section produces parse error", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "<constraints>",
+    "    Be concise.",
+    "</constraints>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_PARSE_ERROR"), true);
+  const parseIssue = issues.find((i) => i.code === "CES_INSTRUCTION_PARSE_ERROR");
+  assert.ok(parseIssue?.message.includes("Unclosed"));
+  assert.ok(parseIssue?.message.includes("<role>"));
+});
+
+test("instruction model is populated on PackageModel", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the main agent.",
+    "</role>",
+    "<constraints>",
+    "    Transfer to {@AGENT: location_services_agent} for locations.",
+    "    Use {@TOOL: end_session} to end.",
+    "</constraints>",
+    "<examples>",
+    "    <example>",
+    "        <user>Find branches</user>",
+    "        <tool_call>location.searchBranches(city=\"Berlin\")</tool_call>",
+    "    </example>",
+    "</examples>",
+  ].join("\n");
+
+  const rootPath = createFixture(files);
+  try {
+    const model = buildPackageModel(rootPath);
+    assert.ok(model.instructionInfos.length > 0);
+    const vba = model.instructionInfos.find((i) => i.agentName === "voice_banking_agent");
+    assert.ok(vba);
+    assert.equal(vba.sections.length, 3); // role, constraints, examples
+    assert.equal(vba.references.length, 2); // 1 agent + 1 tool
+    assert.equal(vba.toolCalls.length, 1); // location.searchBranches
+    assert.equal(vba.toolCalls[0].operation, "location.searchBranches");
+  } finally {
+    cleanupFixture(rootPath);
+  }
 });
