@@ -11,7 +11,7 @@ export const KNOWN_SECTIONS = ["role", "persona", "constraints", "taskflow", "ex
 export const REQUIRED_SECTIONS = ["role"] as const;
 
 const SECTION_OPEN_RE = /^<(role|persona|constraints|taskflow|examples)>/i;
-const SECTION_CLOSE_RE = /^<\/(role|persona|constraints|taskflow|examples)>/i;
+const SECTION_CLOSE_RE = /<\/(role|persona|constraints|taskflow|examples)>/i;
 const AGENT_REF_RE = /\{@AGENT:\s*([^}]+)\}/g;
 const TOOL_REF_RE = /\{@TOOL:\s*([^}]+)\}/g;
 const TOOL_CALL_RE = /([a-zA-Z_][a-zA-Z0-9_.]*)\(([^)]*)\)/g;

@@ -599,6 +599,19 @@ test("instruction with unclosed section produces parse error", () => {
   assert.ok(parseIssue?.message.includes("<role>"));
 });
 
+test("instruction with single-line sections parses correctly", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/instruction.txt"] = [
+    '<role>You are a fallback agent.</role>',
+    '<persona>',
+    '    Be helpful.',
+    '</persona>',
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_PARSE_ERROR"), false);
+});
+
 test("instruction model is populated on PackageModel", () => {
   const files = baseValidFixture();
   files["agents/voice_banking_agent/instruction.txt"] = [
