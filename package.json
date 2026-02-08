@@ -1,0 +1,83 @@
+{
+  "name": "ces-package-validator",
+  "displayName": "CES Package Validator",
+  "description": "Real-time validation for Google Customer Engagement Suite / Dialogflow CX Agent Studio package files.",
+  "version": "0.2.0",
+  "publisher": "acmebank",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "bin": {
+    "ces-validate": "./dist/cli.js"
+  },
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:cesValidator.validateCurrentPackage",
+    "onCommand:cesValidator.clearDiagnostics"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cesValidator",
+          "title": "CES Package",
+          "icon": "$(package)"
+        }
+      ]
+    },
+    "views": {
+      "cesValidator": [
+        {
+          "id": "cesPackageExplorer",
+          "name": "Package Explorer",
+          "icon": "$(package)",
+          "contextualTitle": "CES Package Validator"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cesValidator.validateCurrentPackage",
+        "title": "CES Validator: Validate Current Package"
+      },
+      {
+        "command": "cesValidator.clearDiagnostics",
+        "title": "CES Validator: Clear Diagnostics"
+      },
+      {
+        "command": "cesValidator.refreshTree",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "cesValidator.refreshTree",
+          "when": "view == cesPackageExplorer",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "pretest": "npm run build",
+    "test": "node --test dist/test/**/*.test.js"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/vscode": "^1.96.0",
+    "typescript": "^5.9.2"
+  }
+}

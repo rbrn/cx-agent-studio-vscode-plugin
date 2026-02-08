@@ -1,0 +1,310 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CES Instruction",
+  "scopeName": "text.xml.ces-instruction",
+  "patterns": [
+    { "include": "#agent-reference" },
+    { "include": "#tool-reference" },
+    { "include": "#tool-call" },
+    { "include": "#section-tags" },
+    { "include": "#taskflow-tags" },
+    { "include": "#example-tags" },
+    { "include": "#markdown-bold" },
+    { "include": "#markdown-inline-code" },
+    { "include": "#comment-block" }
+  ],
+  "repository": {
+    "agent-reference": {
+      "match": "(\\{@AGENT:\\s*)([^}]+)(\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.reference.begin.ces" },
+        "2": { "name": "entity.name.type.agent.ces" },
+        "3": { "name": "punctuation.definition.reference.end.ces" }
+      },
+      "name": "meta.reference.agent.ces"
+    },
+    "tool-reference": {
+      "match": "(\\{@TOOL:\\s*)([^}]+)(\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.reference.begin.ces" },
+        "2": { "name": "entity.name.function.tool.ces" },
+        "3": { "name": "punctuation.definition.reference.end.ces" }
+      },
+      "name": "meta.reference.tool.ces"
+    },
+    "tool-call": {
+      "match": "([a-zA-Z_][a-zA-Z0-9_.]*)(\\()([^)]*)(\\))",
+      "captures": {
+        "1": { "name": "entity.name.function.toolcall.ces" },
+        "2": { "name": "punctuation.definition.arguments.begin.ces" },
+        "3": { "name": "variable.parameter.ces" },
+        "4": { "name": "punctuation.definition.arguments.end.ces" }
+      },
+      "name": "meta.tool-call.ces"
+    },
+    "section-tags": {
+      "patterns": [
+        {
+          "begin": "(<)(role|persona|constraints|examples)(>)",
+          "end": "(</)(\\2)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.section.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.section.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.section.$2.ces",
+          "patterns": [
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" },
+            { "include": "#example-tags" },
+            { "include": "#markdown-bold" },
+            { "include": "#markdown-inline-code" }
+          ]
+        }
+      ]
+    },
+    "taskflow-tags": {
+      "patterns": [
+        {
+          "begin": "(<)(taskflow)(>)",
+          "end": "(</)(\\2)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.section.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.section.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.section.taskflow.ces",
+          "patterns": [
+            { "include": "#subtask-tag" },
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" },
+            { "include": "#markdown-bold" },
+            { "include": "#markdown-inline-code" }
+          ]
+        },
+        {
+          "begin": "(<)(subtask)(\\s+[^>]*)(>)",
+          "end": "(</)(subtask)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.structure.ces" },
+            "3": { "name": "entity.other.attribute-name.ces" },
+            "4": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.structure.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.subtask.ces",
+          "patterns": [
+            { "include": "#step-tag" },
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" },
+            { "include": "#markdown-bold" },
+            { "include": "#markdown-inline-code" }
+          ]
+        },
+        {
+          "begin": "(<)(step)(\\s+[^>]*)(>)",
+          "end": "(</)(step)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.structure.ces" },
+            "3": { "name": "entity.other.attribute-name.ces" },
+            "4": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.structure.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.step.ces",
+          "patterns": [
+            { "include": "#trigger-action-tag" },
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" },
+            { "include": "#markdown-bold" },
+            { "include": "#markdown-inline-code" }
+          ]
+        },
+        {
+          "begin": "(<)(trigger|action)(>)",
+          "end": "(</)(\\2)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.keyword.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.keyword.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.$2.ces",
+          "patterns": [
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" },
+            { "include": "#markdown-bold" },
+            { "include": "#markdown-inline-code" }
+          ]
+        }
+      ]
+    },
+    "subtask-tag": {
+      "begin": "(<)(subtask)(\\s+[^>]*)(>)",
+      "end": "(</)(subtask)(>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.structure.ces" },
+        "3": { "name": "entity.other.attribute-name.ces" },
+        "4": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.structure.ces" },
+        "3": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "name": "meta.subtask.ces",
+      "patterns": [
+        { "include": "#step-tag" },
+        { "include": "#agent-reference" },
+        { "include": "#tool-reference" },
+        { "include": "#tool-call" },
+        { "include": "#markdown-bold" },
+        { "include": "#markdown-inline-code" }
+      ]
+    },
+    "step-tag": {
+      "begin": "(<)(step)(\\s+[^>]*)(>)",
+      "end": "(</)(step)(>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.structure.ces" },
+        "3": { "name": "entity.other.attribute-name.ces" },
+        "4": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.structure.ces" },
+        "3": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "name": "meta.step.ces",
+      "patterns": [
+        { "include": "#trigger-action-tag" },
+        { "include": "#agent-reference" },
+        { "include": "#tool-reference" },
+        { "include": "#tool-call" },
+        { "include": "#markdown-bold" },
+        { "include": "#markdown-inline-code" }
+      ]
+    },
+    "trigger-action-tag": {
+      "begin": "(<)(trigger|action)(>)",
+      "end": "(</)(\\2)(>)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.keyword.ces" },
+        "3": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.tag.begin.ces" },
+        "2": { "name": "entity.name.tag.keyword.ces" },
+        "3": { "name": "punctuation.definition.tag.end.ces" }
+      },
+      "name": "meta.$2.ces",
+      "patterns": [
+        { "include": "#agent-reference" },
+        { "include": "#tool-reference" },
+        { "include": "#tool-call" },
+        { "include": "#markdown-bold" },
+        { "include": "#markdown-inline-code" }
+      ]
+    },
+    "example-tags": {
+      "patterns": [
+        {
+          "begin": "(<)(example)(>)",
+          "end": "(</)(example)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.example.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.example.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.example.ces",
+          "patterns": [
+            { "include": "#example-child-tags" },
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" }
+          ]
+        }
+      ]
+    },
+    "example-child-tags": {
+      "patterns": [
+        {
+          "begin": "(<)(user|agent|tool_call)(>)",
+          "end": "(</)(\\2)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.example-part.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.ces" },
+            "2": { "name": "entity.name.tag.example-part.ces" },
+            "3": { "name": "punctuation.definition.tag.end.ces" }
+          },
+          "name": "meta.example-$2.ces",
+          "patterns": [
+            { "include": "#agent-reference" },
+            { "include": "#tool-reference" },
+            { "include": "#tool-call" }
+          ]
+        }
+      ]
+    },
+    "markdown-bold": {
+      "match": "(\\*\\*)([^*]+)(\\*\\*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.bold.begin.ces" },
+        "2": { "name": "markup.bold.ces" },
+        "3": { "name": "punctuation.definition.bold.end.ces" }
+      }
+    },
+    "markdown-inline-code": {
+      "match": "(`)([^`]+)(`)",
+      "captures": {
+        "1": { "name": "punctuation.definition.raw.begin.ces" },
+        "2": { "name": "markup.inline.raw.string.ces" },
+        "3": { "name": "punctuation.definition.raw.end.ces" }
+      }
+    },
+    "comment-block": {
+      "begin": "<!--",
+      "end": "-->",
+      "name": "comment.block.ces"
+    }
+  }
+}
