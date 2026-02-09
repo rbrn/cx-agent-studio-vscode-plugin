@@ -644,3 +644,166 @@ test("instruction model is populated on PackageModel", () => {
     cleanupFixture(rootPath);
   }
 });
+
+// ── Python function tools tests ───────────────────────────────────────────
+
+test("valid Python function tool passes", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "get_balance",
+      pythonFunction: {
+        pythonCode: "tools/get_balance/get_balance.py",
+      },
+    },
+    null,
+    2,
+  );
+  files["tools/get_balance/get_balance.py"] = "def get_balance(): pass";
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MANIFEST_INVALID"), false);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_FUNCTION"), false);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_CODE_PATH"), false);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_CODE_MISSING"), false);
+});
+
+test("Python tool with missing pythonCode file is reported", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "get_balance",
+      pythonFunction: {
+        pythonCode: "tools/get_balance/missing.py",
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_CODE_MISSING"), true);
+});
+
+test("Python tool without pythonFunction object is reported", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "get_balance",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_FUNCTION"), true);
+});
+
+test("Python tool without pythonCode path is reported", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "get_balance",
+      pythonFunction: {},
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_CODE_PATH"), true);
+});
+
+test("Python function tools are registered as direct tools", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "get_balance",
+      pythonFunction: {
+        pythonCode: "tools/get_balance/get_balance.py",
+      },
+    },
+    null,
+    2,
+  );
+  files["tools/get_balance/get_balance.py"] = "def get_balance(): pass";
+
+  const rootPath = createFixture(files);
+  try {
+    const model = buildPackageModel(rootPath);
+    assert.equal(model.directTools.has("get_balance"), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+// ── Namespaced OpenAPI operation tests ────────────────────────────────────
+
+test("L-01: namespaced toolCall (toolset.operationId) is caught as OpenAPI operation", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/location_services_agent.json"] = JSON.stringify(
+    {
+      displayName: "location_services_agent",
+      instruction: "agents/location_services_agent/instruction.txt",
+      toolsets: [{ toolset: "location", toolIds: ["searchBranches", "getBranch"] }],
+    },
+    null,
+    2,
+  );
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["evaluations/branch_search/branch_search.json"] = JSON.stringify(
+    {
+      displayName: "branch_search",
+      golden: {
+        turns: [
+          {
+            steps: [
+              {
+                expectation: {
+                  toolCall: { tool: "location.searchBranches" },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION"), true);
+  const issue = issues.find((i) => i.code === "CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION");
+  assert.ok(issue?.message.includes("location.searchBranches"));
+});
+
+test("namespaced OpenAPI operations are built in model", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/location_services_agent.json"] = JSON.stringify(
+    {
+      displayName: "location_services_agent",
+      instruction: "agents/location_services_agent/instruction.txt",
+      toolsets: [{ toolset: "location", toolIds: ["searchBranches"] }],
+    },
+    null,
+    2,
+  );
+
+  const rootPath = createFixture(files);
+  try {
+    const model = buildPackageModel(rootPath);
+    assert.equal(model.openApiNamespacedOperations.has("location.searchBranches"), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});

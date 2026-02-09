@@ -7,7 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { parseFileByExtension, parseJsonFile } from "./parsers";
 import { parseInstructionFile } from "./instructionParser";
-import { AgentInfo, EvaluationInfo, InstructionInfo, PackageModel, ToolsetInfo } from "./types";
+import { AgentInfo, EvaluationInfo, InstructionInfo, PackageModel, PythonToolInfo, ToolsetInfo } from "./types";
 
 const SCHEMA_EXTENSIONS = new Set([".yaml", ".yml", ".json"]);
 
@@ -39,11 +39,12 @@ export function buildPackageModel(rootPath: string): PackageModel {
 
   const agentInfos = collectAgentInfos(rootPath);
   const toolsetInfos = collectToolsetInfos(rootPath);
+  const pythonToolInfos = collectPythonToolInfos(rootPath);
   const evaluationInfos = collectEvaluationInfos(rootPath);
   const instructionInfos = collectInstructionInfos(rootPath, agentInfos);
   const guardrailDirs = collectImmediateDirectories(path.join(rootPath, "guardrails"));
 
-  const { directTools, openApiOperations } = buildToolInventory(agentInfos, toolsetInfos);
+  const { directTools, openApiOperations, openApiNamespacedOperations } = buildToolInventory(agentInfos, toolsetInfos, pythonToolInfos);
 
   const environmentPath = path.join(rootPath, "environment.json");
   const environment = fs.existsSync(environmentPath)
@@ -71,12 +72,14 @@ export function buildPackageModel(rootPath: string): PackageModel {
     topLevelDirs,
     agentInfos,
     toolsetInfos,
+    pythonToolInfos,
     evaluationInfos,
     instructionInfos,
     guardrailDirs,
     environment,
     directTools,
     openApiOperations,
+    openApiNamespacedOperations,
   };
 }
 
@@ -215,12 +218,37 @@ function collectEvaluationInfos(rootPath: string): EvaluationInfo[] {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function collectPythonToolInfos(rootPath: string): PythonToolInfo[] {
+  const toolsRoot = path.join(rootPath, "tools");
+  const toolDirs = collectImmediateDirectories(toolsRoot);
+
+  return toolDirs
+    .map((dirPath) => {
+      const name = path.basename(dirPath);
+      const manifestPath = path.join(dirPath, `${name}.json`);
+      const parsed = fs.existsSync(manifestPath)
+        ? parseJsonFile(manifestPath)
+        : { data: null, error: "Missing Python tool manifest file" };
+
+      return {
+        name,
+        dirPath,
+        manifestPath,
+        manifestData: parsed.data,
+        manifestError: parsed.error,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function buildToolInventory(
   agentInfos: AgentInfo[],
   toolsetInfos: ToolsetInfo[],
-): { directTools: Set<string>; openApiOperations: Set<string> } {
+  pythonToolInfos: PythonToolInfo[],
+): { directTools: Set<string>; openApiOperations: Set<string>; openApiNamespacedOperations: Set<string> } {
   const directTools = new Set<string>();
   const openApiOperations = new Set<string>();
+  const openApiNamespacedOperations = new Set<string>();
 
   for (const agent of agentInfos) {
     if (!isRecord(agent.manifestData)) {
@@ -241,11 +269,15 @@ function buildToolInventory(
     if (Array.isArray(toolsets)) {
       for (const entry of toolsets) {
         if (isRecord(entry)) {
+          const toolsetName = typeof entry.toolset === "string" ? entry.toolset : "";
           const toolIds = entry.toolIds;
           if (Array.isArray(toolIds)) {
             for (const tid of toolIds) {
               if (typeof tid === "string" && tid.trim().length > 0) {
                 openApiOperations.add(tid);
+                if (toolsetName) {
+                  openApiNamespacedOperations.add(`${toolsetName}.${tid}`);
+                }
               }
             }
           }
@@ -264,12 +296,18 @@ function buildToolInventory(
       for (const tid of toolIds) {
         if (typeof tid === "string" && tid.trim().length > 0) {
           openApiOperations.add(tid);
+          openApiNamespacedOperations.add(`${toolset.name}.${tid}`);
         }
       }
     }
   }
 
-  return { directTools, openApiOperations };
+  // Python function tools are direct tools
+  for (const pythonTool of pythonToolInfos) {
+    directTools.add(pythonTool.name);
+  }
+
+  return { directTools, openApiOperations, openApiNamespacedOperations };
 }
 
 function collectInstructionInfos(rootPath: string, agentInfos: AgentInfo[]): InstructionInfo[] {

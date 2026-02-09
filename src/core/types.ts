@@ -83,6 +83,14 @@ export interface InstructionInfo {
   parseError?: string;
 }
 
+export interface PythonToolInfo {
+  name: string;
+  dirPath: string;
+  manifestPath: string;
+  manifestData: Record<string, unknown> | null;
+  manifestError?: string;
+}
+
 export interface EnvironmentInfo {
   filePath: string;
   data: Record<string, unknown> | null;
@@ -107,6 +115,8 @@ export interface PackageModel {
   instructionInfos: InstructionInfo[];
   guardrailDirs: string[];
   environment: EnvironmentInfo | null;
+  pythonToolInfos: PythonToolInfo[];
   directTools: Set<string>;
   openApiOperations: Set<string>;
+  openApiNamespacedOperations: Set<string>;
 }

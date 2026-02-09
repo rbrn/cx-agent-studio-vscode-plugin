@@ -21,6 +21,7 @@ export function runRules(model: PackageModel): ValidationIssue[] {
   validateNestingDepth(model, issues);
   validateAgents(model, issues);
   validateToolsets(model, issues);
+  validatePythonTools(model, issues);
   validateEvaluations(model, issues);
   validateInstructions(model, issues);
   validateEnvironment(model, issues);
@@ -599,6 +600,68 @@ function validateEnvironment(model: PackageModel, issues: ValidationIssue[]): vo
   }
 }
 
+function validatePythonTools(model: PackageModel, issues: ValidationIssue[]): void {
+  for (const toolInfo of model.pythonToolInfos) {
+    if (toolInfo.manifestError) {
+      pushIssue(
+        issues,
+        "CES_PYTHON_TOOL_MANIFEST_INVALID",
+        `Python tool '${toolInfo.name}' manifest error: ${toolInfo.manifestError}`,
+        "error",
+        toolInfo.manifestPath,
+        1,
+      );
+      continue;
+    }
+
+    if (!isRecord(toolInfo.manifestData)) {
+      continue;
+    }
+
+    const pythonFunction = toolInfo.manifestData.pythonFunction;
+    if (!isRecord(pythonFunction)) {
+      pushIssue(
+        issues,
+        "CES_PYTHON_TOOL_MISSING_FUNCTION",
+        `Python tool '${toolInfo.name}' manifest must contain a 'pythonFunction' object`,
+        "error",
+        toolInfo.manifestPath,
+        findLineContaining(toolInfo.manifestPath, "pythonFunction"),
+      );
+      continue;
+    }
+
+    const pythonCode = pythonFunction.pythonCode;
+    if (typeof pythonCode !== "string" || pythonCode.trim().length === 0) {
+      pushIssue(
+        issues,
+        "CES_PYTHON_TOOL_MISSING_CODE_PATH",
+        `Python tool '${toolInfo.name}' must define pythonFunction.pythonCode path`,
+        "error",
+        toolInfo.manifestPath,
+        findLineContaining(toolInfo.manifestPath, "pythonCode"),
+      );
+      continue;
+    }
+
+    const normalizedCode = normalizeSeparators(pythonCode.trim());
+    const resolvedCodePath = path.isAbsolute(normalizedCode)
+      ? normalizedCode
+      : path.join(model.rootPath, normalizedCode);
+
+    if (!fs.existsSync(resolvedCodePath)) {
+      pushIssue(
+        issues,
+        "CES_PYTHON_TOOL_CODE_MISSING",
+        `Python tool '${toolInfo.name}' code file does not exist: ${normalizedCode}`,
+        "error",
+        toolInfo.manifestPath,
+        findLineContaining(toolInfo.manifestPath, "pythonCode"),
+      );
+    }
+  }
+}
+
 function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): void {
   if (model.evaluationInfos.length === 0) {
     return;
@@ -675,7 +738,7 @@ function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): vo
           continue;
         }
 
-        if (model.openApiOperations.has(toolName)) {
+        if (model.openApiOperations.has(toolName) || model.openApiNamespacedOperations.has(toolName)) {
           pushIssue(
             issues,
             "CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION",

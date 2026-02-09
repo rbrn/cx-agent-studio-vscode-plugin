@@ -3,7 +3,7 @@
 Real-time validation, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.4.0-green)
+![Version](https://img.shields.io/badge/version-0.5.0-green)
 
 ---
 
@@ -14,13 +14,13 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.4.0.vsix
+code --install-extension releases/ces-package-validator-0.5.0.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
 > ```bash
 > "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
->   --install-extension releases/ces-package-validator-0.4.0.vsix
+>   --install-extension releases/ces-package-validator-0.5.0.vsix
 > ```
 
 ### Option B — VS Code UI
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.4.0.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.4.0.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.5.0.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -155,7 +155,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.4.0.vsix # Pre-built extension
+│   └── ces-package-validator-0.5.0.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -177,6 +177,26 @@ Or after global install:
 npm install -g .
 ces-validate /path/to/agent-package
 ```
+
+---
+
+## 📋 Changelog
+
+### 0.5.0 (2026-02-09)
+
+**New rules — parity with `validate-package.py`:**
+
+- **Python function tools** (`tools/` directory) — validates `pythonFunction.pythonCode` file exists
+  - `CES_PYTHON_TOOL_MANIFEST_INVALID` — invalid manifest JSON
+  - `CES_PYTHON_TOOL_MISSING_FUNCTION` — missing `pythonFunction` object
+  - `CES_PYTHON_TOOL_MISSING_CODE_PATH` — missing `pythonCode` path
+  - `CES_PYTHON_TOOL_CODE_MISSING` — referenced `.py` file does not exist
+  - Python function tools are registered as direct tools in the tool inventory
+- **Namespaced OpenAPI refs in evaluations** (L-01 hardening) — `toolset.operationId` form (e.g. `location.searchBranches`) is now specifically caught as `CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION` instead of falling through to "unknown tool"
+
+### 0.4.0 (2026-02-08)
+
+- Initial public release with full CES package validation
 
 ---
 
