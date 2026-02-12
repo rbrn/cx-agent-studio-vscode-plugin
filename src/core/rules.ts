@@ -13,6 +13,18 @@ import { REQUIRED_SECTIONS } from "./instructionParser";
 const ROOT_DEPTH_LIMIT = 2;
 const TOOLSET_DEPTH_LIMIT = 3;
 
+/** CES built-in tools that have no corresponding tools/<name> folder. */
+const BUILTIN_TOOLS = new Set(["end_session"]);
+
+/** All callback keys found in CES agent manifests. */
+const CALLBACK_KEYS = [
+  "afterAgentCallbacks",
+  "beforeModelCallbacks",
+  "afterModelCallbacks",
+  "afterToolCallbacks",
+  "beforeToolCallbacks",
+] as const;
+
 export function runRules(model: PackageModel): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
@@ -20,6 +32,8 @@ export function runRules(model: PackageModel): ValidationIssue[] {
   validateUnsupportedDirectories(model, issues);
   validateNestingDepth(model, issues);
   validateAgents(model, issues);
+  validateAgentCallbacks(model, issues);
+  validateAgentToolsExistence(model, issues);
   validateToolsets(model, issues);
   validatePythonTools(model, issues);
   validateEvaluations(model, issues);
@@ -336,6 +350,93 @@ function validateAgents(model: PackageModel, issues: ValidationIssue[]): void {
   }
 }
 
+function validateAgentCallbacks(model: PackageModel, issues: ValidationIssue[]): void {
+  for (const agentInfo of model.agentInfos) {
+    if (!isRecord(agentInfo.manifestData)) {
+      continue;
+    }
+
+    for (const cbKey of CALLBACK_KEYS) {
+      const callbacks = agentInfo.manifestData[cbKey];
+      if (!Array.isArray(callbacks)) {
+        continue;
+      }
+
+      for (let idx = 0; idx < callbacks.length; idx++) {
+        const cb = callbacks[idx];
+        if (!isRecord(cb)) {
+          continue;
+        }
+
+        const pythonCode = cb.pythonCode;
+        if (typeof pythonCode !== "string" || pythonCode.trim().length === 0) {
+          pushIssue(
+            issues,
+            "CES_CALLBACK_MISSING_CODE_PATH",
+            `Agent '${agentInfo.name}' ${cbKey}[${idx}] has no pythonCode path`,
+            "warning",
+            agentInfo.manifestPath,
+            findLineContaining(agentInfo.manifestPath, cbKey),
+          );
+          continue;
+        }
+
+        const normalizedCode = normalizeSeparators(pythonCode.trim());
+        const resolvedPath = path.isAbsolute(normalizedCode)
+          ? normalizedCode
+          : path.join(model.rootPath, normalizedCode);
+
+        if (!fs.existsSync(resolvedPath)) {
+          pushIssue(
+            issues,
+            "CES_CALLBACK_CODE_MISSING",
+            `Agent '${agentInfo.name}' ${cbKey}[${idx}] pythonCode file does not exist: ${normalizedCode}`,
+            "error",
+            agentInfo.manifestPath,
+            findLineContaining(agentInfo.manifestPath, "pythonCode"),
+          );
+        }
+      }
+    }
+  }
+}
+
+function validateAgentToolsExistence(model: PackageModel, issues: ValidationIssue[]): void {
+  const pythonToolNames = new Set(model.pythonToolInfos.map((t) => t.name));
+
+  for (const agentInfo of model.agentInfos) {
+    if (!isRecord(agentInfo.manifestData)) {
+      continue;
+    }
+
+    const tools = agentInfo.manifestData.tools;
+    if (!Array.isArray(tools)) {
+      continue;
+    }
+
+    for (const tool of tools) {
+      if (typeof tool !== "string" || tool.trim().length === 0) {
+        continue;
+      }
+
+      if (BUILTIN_TOOLS.has(tool)) {
+        continue;
+      }
+
+      if (!pythonToolNames.has(tool)) {
+        pushIssue(
+          issues,
+          "CES_AGENT_TOOL_NOT_FOUND",
+          `Agent '${agentInfo.name}' references tool '${tool}' but tools/${tool}/${tool}.json does not exist and it is not a known built-in`,
+          "error",
+          agentInfo.manifestPath,
+          findLineContaining(agentInfo.manifestPath, tool),
+        );
+      }
+    }
+  }
+}
+
 function validateAgentManifest(agentInfo: AgentInfo, issues: ValidationIssue[]): void {
   if (agentInfo.manifestError) {
     pushIssue(
@@ -539,51 +640,113 @@ function validateEnvironment(model: PackageModel, issues: ValidationIssue[]): vo
     return;
   }
 
+  // Warn about unknown top-level keys
+  const KNOWN_ENV_KEYS = new Set(["app", "toolsets"]);
+  for (const key of Object.keys(model.environment.data)) {
+    if (!KNOWN_ENV_KEYS.has(key)) {
+      pushIssue(
+        issues,
+        "CES_ENVIRONMENT_UNKNOWN_KEY",
+        `environment.json contains unknown top-level key '${key}'; expected keys: app, toolsets`,
+        "warning",
+        model.environment.filePath,
+        findLineContaining(model.environment.filePath, key),
+      );
+    }
+  }
+
+  // Validate toolsets section (optional — only checked if present)
   const toolsets = model.environment.data.toolsets;
-  if (!isRecord(toolsets)) {
-    pushIssue(
-      issues,
-      "CES_ENVIRONMENT_TOOLSETS_INVALID",
-      "environment.json must contain a 'toolsets' object",
-      "error",
-      model.environment.filePath,
-      findLineContaining(model.environment.filePath, "toolsets"),
-    );
-  } else {
-    for (const [toolsetName, value] of Object.entries(toolsets)) {
-      if (!isRecord(value)) {
-        pushIssue(
-          issues,
-          "CES_ENVIRONMENT_TOOLSET_ENTRY_INVALID",
-          `environment.json toolsets.${toolsetName} must be an object`,
-          "error",
-          model.environment.filePath,
-          findLineContaining(model.environment.filePath, toolsetName),
-        );
-        continue;
-      }
+  if (toolsets !== undefined) {
+    if (!isRecord(toolsets)) {
+      pushIssue(
+        issues,
+        "CES_ENVIRONMENT_TOOLSETS_INVALID",
+        "environment.json 'toolsets' must be an object",
+        "error",
+        model.environment.filePath,
+        findLineContaining(model.environment.filePath, "toolsets"),
+      );
+    } else {
+      for (const [toolsetName, value] of Object.entries(toolsets)) {
+        if (!isRecord(value)) {
+          pushIssue(
+            issues,
+            "CES_ENVIRONMENT_TOOLSET_ENTRY_INVALID",
+            `environment.json toolsets.${toolsetName} must be an object`,
+            "error",
+            model.environment.filePath,
+            findLineContaining(model.environment.filePath, toolsetName),
+          );
+          continue;
+        }
 
-      const openApiToolset = value.openApiToolset;
-      if (openApiToolset !== undefined && !isRecord(openApiToolset)) {
-        pushIssue(
-          issues,
-          "CES_ENVIRONMENT_OPENAPI_TOOLSET_INVALID",
-          `environment.json toolsets.${toolsetName}.openApiToolset must be an object`,
-          "error",
-          model.environment.filePath,
-          findLineContaining(model.environment.filePath, "openApiToolset"),
-        );
-        continue;
-      }
+        const openApiToolset = value.openApiToolset;
+        if (openApiToolset !== undefined && !isRecord(openApiToolset)) {
+          pushIssue(
+            issues,
+            "CES_ENVIRONMENT_OPENAPI_TOOLSET_INVALID",
+            `environment.json toolsets.${toolsetName}.openApiToolset must be an object`,
+            "error",
+            model.environment.filePath,
+            findLineContaining(model.environment.filePath, "openApiToolset"),
+          );
+          continue;
+        }
 
-      if (isRecord(openApiToolset) && openApiToolset.url !== undefined && typeof openApiToolset.url !== "string") {
+        if (isRecord(openApiToolset) && openApiToolset.url !== undefined && typeof openApiToolset.url !== "string") {
+          pushIssue(
+            issues,
+            "CES_ENVIRONMENT_OPENAPI_URL_INVALID",
+            `environment.json toolsets.${toolsetName}.openApiToolset.url must be a string`,
+            "error",
+            model.environment.filePath,
+            findLineContaining(model.environment.filePath, "url"),
+          );
+        }
+      }
+    }
+  }
+
+  // Validate app section (optional — only checked if present)
+  const envApp = model.environment.data.app;
+  if (envApp !== undefined) {
+    if (!isRecord(envApp)) {
+      pushIssue(
+        issues,
+        "CES_ENVIRONMENT_APP_INVALID",
+        "environment.json 'app' must be an object",
+        "error",
+        model.environment.filePath,
+        findLineContaining(model.environment.filePath, "app"),
+      );
+    } else {
+      const loggingSettings = envApp.loggingSettings;
+      if (loggingSettings !== undefined && !isRecord(loggingSettings)) {
         pushIssue(
           issues,
-          "CES_ENVIRONMENT_OPENAPI_URL_INVALID",
-          `environment.json toolsets.${toolsetName}.openApiToolset.url must be a string`,
+          "CES_ENVIRONMENT_APP_LOGGING_INVALID",
+          "environment.json app.loggingSettings must be an object",
           "error",
           model.environment.filePath,
-          findLineContaining(model.environment.filePath, "url"),
+          findLineContaining(model.environment.filePath, "loggingSettings"),
+        );
+      }
+    }
+  }
+
+  // Validate that toolset names in environment.json match existing toolsets/
+  const toolsetNames = new Set(model.toolsetInfos.map((t) => t.name));
+  if (isRecord(toolsets)) {
+    for (const tsName of Object.keys(toolsets)) {
+      if (!toolsetNames.has(tsName)) {
+        pushIssue(
+          issues,
+          "CES_ENVIRONMENT_TOOLSET_NOT_FOUND",
+          `environment.json references toolset '${tsName}' but toolsets/${tsName}/ does not exist`,
+          "error",
+          model.environment.filePath,
+          findLineContaining(model.environment.filePath, tsName),
         );
       }
     }
@@ -697,6 +860,63 @@ function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): vo
       );
     }
 
+    // Validate scenario-based evaluation tool references
+    const scenario = evalInfo.manifestData.scenario;
+    if (isRecord(scenario)) {
+      const scenarioExpectations = scenario.scenarioExpectations;
+      if (Array.isArray(scenarioExpectations)) {
+        for (let seIdx = 0; seIdx < scenarioExpectations.length; seIdx++) {
+          const se = scenarioExpectations[seIdx];
+          if (!isRecord(se)) {
+            continue;
+          }
+
+          const te = se.toolExpectation;
+          if (!isRecord(te)) {
+            continue;
+          }
+
+          // Validate expectedToolCall
+          const etc = te.expectedToolCall;
+          if (isRecord(etc)) {
+            const etool = etc.tool;
+            if (typeof etool === "string" && etool.trim().length > 0) {
+              const allValid = new Set([...model.directTools, ...model.openApiOperations, ...BUILTIN_TOOLS]);
+              if (!allValid.has(etool)) {
+                pushIssue(
+                  issues,
+                  "CES_EVALUATION_SCENARIO_TOOL_UNKNOWN",
+                  `Evaluation '${evalInfo.name}' scenario expectation ${seIdx + 1}: expectedToolCall '${etool}' not found in tools/toolsets`,
+                  "error",
+                  evalInfo.manifestPath,
+                  findLineContaining(evalInfo.manifestPath, etool),
+                );
+              }
+            }
+          }
+
+          // Validate mockToolResponse
+          const mtr = te.mockToolResponse;
+          if (isRecord(mtr)) {
+            const mtool = mtr.tool;
+            if (typeof mtool === "string" && mtool.trim().length > 0) {
+              const allValid = new Set([...model.directTools, ...model.openApiOperations, ...BUILTIN_TOOLS]);
+              if (!allValid.has(mtool)) {
+                pushIssue(
+                  issues,
+                  "CES_EVALUATION_SCENARIO_MOCK_TOOL_UNKNOWN",
+                  `Evaluation '${evalInfo.name}' scenario expectation ${seIdx + 1}: mockToolResponse '${mtool}' not found in tools/toolsets`,
+                  "error",
+                  evalInfo.manifestPath,
+                  findLineContaining(evalInfo.manifestPath, mtool),
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+
     // L-01: toolCall expectations must reference direct tools, not OpenAPI operations
     const golden = evalInfo.manifestData.golden;
     if (!isRecord(golden)) {
@@ -727,6 +947,25 @@ function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): vo
         const expectation = step.expectation;
         if (!isRecord(expectation)) {
           continue;
+        }
+
+        // Validate agentResponse.role references a known agent
+        const agentResponse = expectation.agentResponse;
+        if (isRecord(agentResponse)) {
+          const role = agentResponse.role;
+          if (typeof role === "string" && role.trim().length > 0) {
+            const agentNames = new Set(model.agentInfos.map((a) => a.name));
+            if (!agentNames.has(role)) {
+              pushIssue(
+                issues,
+                "CES_EVALUATION_AGENT_ROLE_UNKNOWN",
+                `Evaluation '${evalInfo.name}' turn ${turnIdx + 1}: agentResponse role '${role}' not found in agents/. Known agents: [${[...agentNames].sort().join(", ")}]`,
+                "warning",
+                evalInfo.manifestPath,
+                findLineContaining(evalInfo.manifestPath, role),
+              );
+            }
+          }
         }
 
         const toolCall = expectation.toolCall;
@@ -927,7 +1166,34 @@ function containsLocalhostReference(value: unknown): boolean {
   return false;
 }
 
+/** Returns true if any string value in the structure equals "$env_var". */
+function containsEnvVarPlaceholder(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value === "$env_var";
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsEnvVarPlaceholder(entry));
+  }
+
+  if (isRecord(value)) {
+    return Object.values(value).some((entry) => containsEnvVarPlaceholder(entry));
+  }
+
+  return false;
+}
+
+/**
+ * Validate environment variable placeholders in manifests.
+ *
+ * Two checks:
+ * 1. CES_ENV_VAR_PLACEHOLDER — broad regex scan for any $VARIABLE_NAME pattern
+ *    in JSON/YAML config files (warning).
+ * 2. CES_ENV_VAR_NO_ENVIRONMENT — literal "$env_var" in manifests when no
+ *    environment.json exists (error, CES import will fail).
+ */
 function validateEnvVarPlaceholders(model: PackageModel, issues: ValidationIssue[]): void {
+  // ── Broad regex scan for unresolved $VARIABLE_NAME placeholders ──────────
   const ENV_VAR_PATTERN = /\$[A-Za-z][A-Za-z0-9_]*/g;
   const JSON_SCHEMA_KEYWORDS = new Set(["$ref", "$schema", "$id", "$defs", "$comment", "$anchor", "$dynamicRef", "$dynamicAnchor", "$vocabulary"]);
   const CONFIG_EXTENSIONS = new Set([".json", ".yaml", ".yml"]);
@@ -968,6 +1234,44 @@ function validateEnvVarPlaceholders(model: PackageModel, issues: ValidationIssue
           lineIndex + 1,
         );
       }
+    }
+  }
+
+  // ── Literal "$env_var" check — CES export substitution ──────────────────
+  const sources: Array<{ label: string; data: unknown; filePath: string }> = [];
+
+  if (model.manifestData && model.manifestPath) {
+    sources.push({ label: path.basename(model.manifestPath), data: model.manifestData, filePath: model.manifestPath });
+  }
+
+  for (const agent of model.agentInfos) {
+    if (agent.manifestData) {
+      sources.push({ label: `agents/${agent.name}`, data: agent.manifestData, filePath: agent.manifestPath });
+    }
+  }
+
+  for (const tool of model.pythonToolInfos) {
+    if (tool.manifestData) {
+      sources.push({ label: `tools/${tool.name}`, data: tool.manifestData, filePath: tool.manifestPath });
+    }
+  }
+
+  for (const toolset of model.toolsetInfos) {
+    if (toolset.manifestData) {
+      sources.push({ label: `toolsets/${toolset.name}`, data: toolset.manifestData, filePath: toolset.manifestPath });
+    }
+  }
+
+  for (const source of sources) {
+    if (containsEnvVarPlaceholder(source.data) && !model.environment) {
+      pushIssue(
+        issues,
+        "CES_ENV_VAR_NO_ENVIRONMENT",
+        `${source.label} contains $env_var placeholder(s) but no environment.json exists; CES import will fail without substituted values`,
+        "error",
+        source.filePath,
+        findLineContaining(source.filePath, "$env_var"),
+      );
     }
   }
 }

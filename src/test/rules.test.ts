@@ -808,6 +808,284 @@ test("namespaced OpenAPI operations are built in model", () => {
   }
 });
 
+// ── Callback pythonCode validation tests ──────────────────────────────────
+
+test("valid callback pythonCode passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      afterAgentCallbacks: [
+        {
+          pythonCode: "agents/voice_banking_agent/after_agent_callbacks/after_agent_callbacks_01/python_code.py",
+          description: "Track inactivity",
+        },
+      ],
+    },
+    null,
+    2,
+  );
+  files["agents/voice_banking_agent/after_agent_callbacks/after_agent_callbacks_01/python_code.py"] = "def callback(): pass";
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_CALLBACK_CODE_MISSING"), false);
+  assert.equal(hasCode(issues, "CES_CALLBACK_MISSING_CODE_PATH"), false);
+});
+
+test("missing callback pythonCode file is reported", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      beforeModelCallbacks: [
+        {
+          pythonCode: "agents/voice_banking_agent/before_model_callbacks/missing.py",
+          description: "Missing callback",
+        },
+      ],
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_CALLBACK_CODE_MISSING"), true);
+});
+
+test("callback without pythonCode path produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      afterToolCallbacks: [
+        {
+          description: "No code path",
+        },
+      ],
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_CALLBACK_MISSING_CODE_PATH"), true);
+});
+
+// ── Agent tools[] existence tests ─────────────────────────────────────────
+
+test("agent tool referencing existing Python function tool passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["greeting", "end_session"],
+    },
+    null,
+    2,
+  );
+  files["tools/greeting/greeting.json"] = JSON.stringify(
+    {
+      displayName: "greeting",
+      pythonFunction: { pythonCode: "tools/greeting/python_function/python_code.py" },
+    },
+    null,
+    2,
+  );
+  files["tools/greeting/python_function/python_code.py"] = "def greeting(): pass";
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_AGENT_TOOL_NOT_FOUND"), false);
+});
+
+test("agent tool referencing built-in end_session passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_AGENT_TOOL_NOT_FOUND"), false);
+});
+
+test("agent tool referencing missing tool is reported", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["nonexistent_tool"],
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_AGENT_TOOL_NOT_FOUND"), true);
+  const issue = issues.find((i) => i.code === "CES_AGENT_TOOL_NOT_FOUND");
+  assert.ok(issue?.message.includes("nonexistent_tool"));
+});
+
+// ── Environment.json toolset cross-reference tests ────────────────────────
+
+test("environment.json toolset matching existing toolset passes", () => {
+  const files = baseValidFixture();
+  // default fixture already has environment.json with "location" -> toolsets/location
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_TOOLSET_NOT_FOUND"), false);
+});
+
+test("environment.json toolset referencing missing toolset is reported", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        nonexistent_service: {
+          openApiToolset: { url: "https://api.example.com" },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_TOOLSET_NOT_FOUND"), true);
+  const issue = issues.find((i) => i.code === "CES_ENVIRONMENT_TOOLSET_NOT_FOUND");
+  assert.ok(issue?.message.includes("nonexistent_service"));
+});
+
+test("environment.json with only app section (no toolsets) passes", () => {
+  const files = baseValidFixture();
+  delete files["toolsets/location/location.json"];
+  delete files["toolsets/location/open_api_toolset/open_api_schema.yaml"];
+  files["agents/location_services_agent/location_services_agent.json"] = JSON.stringify(
+    {
+      displayName: "location_services_agent",
+      instruction: "agents/location_services_agent/instruction.txt",
+    },
+    null,
+    2,
+  );
+  files["environment.json"] = JSON.stringify(
+    {
+      app: {
+        loggingSettings: {
+          audioRecordingConfig: { gcsBucket: "gs://my-bucket" },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_TOOLSETS_INVALID"), false);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_APP_INVALID"), false);
+});
+
+test("environment.json unknown top-level key produces warning", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: { openApiToolset: { url: "https://api.example.com" } },
+      },
+      unknownSection: { foo: "bar" },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_UNKNOWN_KEY"), true);
+  const issue = issues.find((i) => i.code === "CES_ENVIRONMENT_UNKNOWN_KEY");
+  assert.ok(issue?.message.includes("unknownSection"));
+});
+
+test("environment.json invalid app section produces error", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: { openApiToolset: { url: "https://api.example.com" } },
+      },
+      app: "not_an_object",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_APP_INVALID"), true);
+});
+
+test("environment.json invalid app.loggingSettings produces error", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: { openApiToolset: { url: "https://api.example.com" } },
+      },
+      app: { loggingSettings: "not_an_object" },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_APP_LOGGING_INVALID"), true);
+});
+
+test("$env_var in agent manifest without environment.json produces error", () => {
+  const files = baseValidFixture();
+  delete files["environment.json"];
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      authConfig: { apiKey: "$env_var" },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENV_VAR_NO_ENVIRONMENT"), true);
+});
+
+test("$env_var in agent manifest with environment.json present passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      authConfig: { apiKey: "$env_var" },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENV_VAR_NO_ENVIRONMENT"), false);
+
 // ── $env_var placeholder validation tests ────────────────────────────────
 
 test("$env_var placeholder in environment.json produces warning", () => {
@@ -898,4 +1176,229 @@ test("multiple $env_var placeholders in same file each produce a warning", () =>
   const messages = placeholderIssues.map((i) => i.message);
   assert.ok(messages.some((m) => m.includes("$API_BASE_URL")));
   assert.ok(messages.some((m) => m.includes("$API_KEY")));
+});
+});
+
+test("valid app section in environment.json passes", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: { openApiToolset: { url: "https://api.example.com" } },
+      },
+      app: {
+        loggingSettings: {
+          audioRecordingConfig: { gcsBucket: "gs://my-bucket" },
+          bigqueryExportSettings: { project: "my-project" },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_APP_INVALID"), false);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_APP_LOGGING_INVALID"), false);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_UNKNOWN_KEY"), false);
+});
+
+// ── Evaluation agentResponse.role validation tests ────────────────────────
+
+test("golden eval with valid agentResponse.role passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["evaluations/greet_eval/greet_eval.json"] = JSON.stringify(
+    {
+      displayName: "greet_eval",
+      golden: {
+        turns: [
+          {
+            steps: [
+              { userInput: { text: "hi" } },
+              {
+                expectation: {
+                  agentResponse: {
+                    role: "voice_banking_agent",
+                    chunks: [{ text: "Hello!" }],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_AGENT_ROLE_UNKNOWN"), false);
+});
+
+test("golden eval with unknown agentResponse.role produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["evaluations/bad_role/bad_role.json"] = JSON.stringify(
+    {
+      displayName: "bad_role",
+      golden: {
+        turns: [
+          {
+            steps: [
+              { userInput: { text: "hi" } },
+              {
+                expectation: {
+                  agentResponse: {
+                    role: "agent",
+                    chunks: [{ text: "Hello!" }],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_AGENT_ROLE_UNKNOWN"), true);
+  const issue = issues.find((i) => i.code === "CES_EVALUATION_AGENT_ROLE_UNKNOWN");
+  assert.ok(issue?.message.includes("agent"));
+});
+
+// ── Scenario evaluation tool reference tests ──────────────────────────────
+
+test("scenario eval with valid expectedToolCall passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session", "update_cart"],
+    },
+    null,
+    2,
+  );
+  files["tools/update_cart/update_cart.json"] = JSON.stringify(
+    {
+      displayName: "update_cart",
+      pythonFunction: { pythonCode: "tools/update_cart/python_function/python_code.py" },
+    },
+    null,
+    2,
+  );
+  files["tools/update_cart/python_function/python_code.py"] = "def update_cart(): pass";
+  files["evaluations/cart_test/cart_test.json"] = JSON.stringify(
+    {
+      displayName: "cart_test",
+      scenario: {
+        task: "Test cart update",
+        scenarioExpectations: [
+          {
+            toolExpectation: {
+              expectedToolCall: { tool: "update_cart" },
+            },
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_SCENARIO_TOOL_UNKNOWN"), false);
+});
+
+test("scenario eval with unknown expectedToolCall is reported", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["evaluations/bad_scenario/bad_scenario.json"] = JSON.stringify(
+    {
+      displayName: "bad_scenario",
+      scenario: {
+        task: "Test unknown tool",
+        scenarioExpectations: [
+          {
+            toolExpectation: {
+              expectedToolCall: { tool: "totally_fake_tool" },
+            },
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_SCENARIO_TOOL_UNKNOWN"), true);
+});
+
+test("scenario eval with unknown mockToolResponse is reported", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["evaluations/bad_mock/bad_mock.json"] = JSON.stringify(
+    {
+      displayName: "bad_mock",
+      scenario: {
+        task: "Test mock response",
+        scenarioExpectations: [
+          {
+            toolExpectation: {
+              expectedToolCall: { tool: "end_session" },
+              mockToolResponse: { tool: "ghost_tool", response: {} },
+            },
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_SCENARIO_MOCK_TOOL_UNKNOWN"), true);
 });
