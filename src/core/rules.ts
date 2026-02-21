@@ -25,6 +25,7 @@ export function runRules(model: PackageModel): ValidationIssue[] {
   validateEvaluations(model, issues);
   validateInstructions(model, issues);
   validateEnvironment(model, issues);
+  validateEnvVarPlaceholders(model, issues);
 
   issues.sort((left, right) => {
     const fileCompare = left.file.localeCompare(right.file);
@@ -924,6 +925,51 @@ function containsLocalhostReference(value: unknown): boolean {
   }
 
   return false;
+}
+
+function validateEnvVarPlaceholders(model: PackageModel, issues: ValidationIssue[]): void {
+  const ENV_VAR_PATTERN = /\$[A-Za-z][A-Za-z0-9_]*/g;
+  const JSON_SCHEMA_KEYWORDS = new Set(["$ref", "$schema", "$id", "$defs", "$comment", "$anchor", "$dynamicRef", "$dynamicAnchor", "$vocabulary"]);
+  const CONFIG_EXTENSIONS = new Set([".json", ".yaml", ".yml"]);
+
+  for (const filePath of model.files) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!CONFIG_EXTENSIONS.has(ext)) {
+      continue;
+    }
+
+    const relativeParts = path.relative(model.rootPath, filePath).split(path.sep);
+    if (relativeParts.includes("open_api_toolset")) {
+      continue;
+    }
+
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.split(/\r?\n/);
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex] ?? "";
+      const matches = line.matchAll(ENV_VAR_PATTERN);
+      for (const match of matches) {
+        const placeholder = match[0];
+        if (JSON_SCHEMA_KEYWORDS.has(placeholder)) {
+          continue;
+        }
+        pushIssue(
+          issues,
+          "CES_ENV_VAR_PLACEHOLDER",
+          `Unresolved environment variable placeholder '${placeholder}' found; replace with actual value before import`,
+          "warning",
+          filePath,
+          lineIndex + 1,
+        );
+      }
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

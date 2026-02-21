@@ -807,3 +807,95 @@ test("namespaced OpenAPI operations are built in model", () => {
     cleanupFixture(rootPath);
   }
 });
+
+// ── $env_var placeholder validation tests ────────────────────────────────
+
+test("$env_var placeholder in environment.json produces warning", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: {
+          openApiToolset: {
+            url: "$API_BASE_URL",
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENV_VAR_PLACEHOLDER"), true);
+  const issue = issues.find((i) => i.code === "CES_ENV_VAR_PLACEHOLDER");
+  assert.ok(issue?.message.includes("$API_BASE_URL"));
+});
+
+test("$env_var placeholder in agent manifest produces warning", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      someConfig: "$MY_SECRET_KEY",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENV_VAR_PLACEHOLDER"), true);
+  const issue = issues.find((i) => i.code === "CES_ENV_VAR_PLACEHOLDER");
+  assert.ok(issue?.message.includes("$MY_SECRET_KEY"));
+});
+
+test("valid package fixture with no $env_var placeholders produces no placeholder warning", () => {
+  const issues = runValidation(baseValidFixture());
+  assert.equal(hasCode(issues, "CES_ENV_VAR_PLACEHOLDER"), false);
+});
+
+test("JSON Schema keywords like $ref and $schema are not flagged as env var placeholders", () => {
+  const files = baseValidFixture();
+  files["toolsets/location/location.json"] = JSON.stringify(
+    {
+      displayName: "location",
+      openApiToolset: {
+        openApiSchema: "toolsets/location/open_api_toolset/open_api_schema.yaml",
+        $ref: "#/definitions/something",
+        $schema: "http://json-schema.org/draft-07/schema",
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENV_VAR_PLACEHOLDER"), false);
+});
+
+test("multiple $env_var placeholders in same file each produce a warning", () => {
+  const files = baseValidFixture();
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        location: {
+          openApiToolset: {
+            url: "$API_BASE_URL",
+            apiKey: "$API_KEY",
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  const placeholderIssues = issues.filter((i) => i.code === "CES_ENV_VAR_PLACEHOLDER");
+  assert.ok(placeholderIssues.length >= 2);
+  const messages = placeholderIssues.map((i) => i.message);
+  assert.ok(messages.some((m) => m.includes("$API_BASE_URL")));
+  assert.ok(messages.some((m) => m.includes("$API_KEY")));
+});
