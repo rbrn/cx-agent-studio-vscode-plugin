@@ -119,4 +119,5 @@ export interface PackageModel {
   directTools: Set<string>;
   openApiOperations: Set<string>;
   openApiNamespacedOperations: Set<string>;
+  googleSearchToolNames: Set<string>;
 }

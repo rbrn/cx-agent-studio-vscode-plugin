@@ -7,7 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
-import { AgentInfo, PackageModel, ValidationIssue, ValidationSeverity } from "./types";
+import { AgentInfo, PackageModel, PythonToolInfo, ValidationIssue, ValidationSeverity } from "./types";
 import { REQUIRED_SECTIONS } from "./instructionParser";
 
 const ROOT_DEPTH_LIMIT = 2;
@@ -782,12 +782,18 @@ function validatePythonTools(model: PackageModel, issues: ValidationIssue[]): vo
       continue;
     }
 
+    // Handle googleSearchTool manifests separately
+    if (isRecord(toolInfo.manifestData.googleSearchTool)) {
+      validateGoogleSearchTool(toolInfo, toolInfo.manifestData.googleSearchTool as Record<string, unknown>, issues);
+      continue;
+    }
+
     const pythonFunction = toolInfo.manifestData.pythonFunction;
     if (!isRecord(pythonFunction)) {
       pushIssue(
         issues,
         "CES_PYTHON_TOOL_MISSING_FUNCTION",
-        `Python tool '${toolInfo.name}' manifest must contain a 'pythonFunction' object`,
+        `Python tool '${toolInfo.name}' manifest must contain a 'pythonFunction' or 'googleSearchTool' object`,
         "error",
         toolInfo.manifestPath,
         findLineContaining(toolInfo.manifestPath, "pythonFunction"),
@@ -822,6 +828,70 @@ function validatePythonTools(model: PackageModel, issues: ValidationIssue[]): vo
         toolInfo.manifestPath,
         findLineContaining(toolInfo.manifestPath, "pythonCode"),
       );
+    }
+  }
+}
+
+/** Regex for Vertex AI data store ID format: projects/{project}/locations/{location}/collections/{collection}/dataStores/{dataStoreId} */
+const DATA_STORE_ID_PATTERN = /^projects\/[^/]+\/locations\/[^/]+\/collections\/[^/]+\/dataStores\/[^/]+$/;
+
+function validateGoogleSearchTool(
+  toolInfo: PythonToolInfo,
+  googleSearchTool: Record<string, unknown>,
+  issues: ValidationIssue[],
+): void {
+  const contextUrls = googleSearchTool.contextUrls;
+  const dataStoreId = googleSearchTool.dataStoreId;
+
+  const hasContextUrls = Array.isArray(contextUrls) && contextUrls.length > 0;
+  const hasDataStoreId = typeof dataStoreId === "string" && dataStoreId.trim().length > 0;
+
+  if (!hasContextUrls && !hasDataStoreId) {
+    pushIssue(
+      issues,
+      "CES_GOOGLE_SEARCH_TOOL_MISSING_SOURCE",
+      `Google Search tool '${toolInfo.name}' must define either 'contextUrls' or 'dataStoreId'`,
+      "error",
+      toolInfo.manifestPath,
+      findLineContaining(toolInfo.manifestPath, "googleSearchTool"),
+    );
+    return;
+  }
+
+  if (hasContextUrls && hasDataStoreId) {
+    pushIssue(
+      issues,
+      "CES_GOOGLE_SEARCH_TOOL_DUAL_SOURCE",
+      `Google Search tool '${toolInfo.name}' defines both 'contextUrls' and 'dataStoreId'; only one should be used`,
+      "warning",
+      toolInfo.manifestPath,
+      findLineContaining(toolInfo.manifestPath, "dataStoreId"),
+    );
+  }
+
+  if (hasDataStoreId && !DATA_STORE_ID_PATTERN.test(dataStoreId as string)) {
+    pushIssue(
+      issues,
+      "CES_GOOGLE_SEARCH_TOOL_DATASTORE_FORMAT",
+      `Google Search tool '${toolInfo.name}' dataStoreId format is invalid. Expected: projects/{project}/locations/{location}/collections/{collection}/dataStores/{id}`,
+      "warning",
+      toolInfo.manifestPath,
+      findLineContaining(toolInfo.manifestPath, "dataStoreId"),
+    );
+  }
+
+  if (hasContextUrls) {
+    for (const url of contextUrls as unknown[]) {
+      if (typeof url !== "string" || url.trim().length === 0) {
+        pushIssue(
+          issues,
+          "CES_GOOGLE_SEARCH_TOOL_INVALID_URL",
+          `Google Search tool '${toolInfo.name}' contextUrls contains an empty or non-string entry`,
+          "error",
+          toolInfo.manifestPath,
+          findLineContaining(toolInfo.manifestPath, "contextUrls"),
+        );
+      }
     }
   }
 }
@@ -978,7 +1048,16 @@ function validateEvaluations(model: PackageModel, issues: ValidationIssue[]): vo
           continue;
         }
 
-        if (model.openApiOperations.has(toolName) || model.openApiNamespacedOperations.has(toolName)) {
+        if (model.googleSearchToolNames.has(toolName)) {
+          pushIssue(
+            issues,
+            "CES_EVALUATION_TOOLCALL_GOOGLE_SEARCH",
+            `Evaluation '${evalInfo.name}' turn ${turnIdx + 1}: toolCall '${toolName}' is a googleSearchTool. CES golden evals cannot reference googleSearchTool operations — use agentResponse expectations instead. (Learning L-01)`,
+            "error",
+            evalInfo.manifestPath,
+            findLineContaining(evalInfo.manifestPath, toolName),
+          );
+        } else if (model.openApiOperations.has(toolName) || model.openApiNamespacedOperations.has(toolName)) {
           pushIssue(
             issues,
             "CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION",

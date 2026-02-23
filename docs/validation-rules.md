@@ -1,8 +1,8 @@
 # CES Package Validation Rules — Complete Reference
 
-> **Auto-generated from source:** `ces-plugin/src/core/rules.ts` (v0.7.0) and `ces-agent/scripts/validate-package.py`
+> **Auto-generated from source:** `ces-plugin/src/core/rules.ts` (v0.8.0) and `ces-agent/scripts/validate-package.py`
 >
-> Last updated: 2026-02-12
+> Last updated: 2026-02-13
 
 This document is the single source of truth for every validation check performed by the **CES Package Validator VS Code Extension** and the **standalone Python validation script**. Both tools aim for parity — where a check exists in one but not the other, it is noted.
 
@@ -21,13 +21,14 @@ This document is the single source of truth for every validation check performed
 | 7 | [Agent tools](#7-agent-tools) | ✅ 12 | 1 code | 1 |
 | 8 | [Toolsets & OpenAPI](#8-toolsets--openapi) | ✅ 6, 7 | 5 codes | 5 |
 | 9 | [Python function tools](#9-python-function-tools) | ✅ 7b | 4 codes | 4 |
-| 10 | [Evaluations](#10-evaluations) | ✅ 9 | 6 codes | 6 |
-| 11 | [Instructions](#11-instruction-files) | — | 6 codes | 6 |
-| 12 | [Environment](#12-environment) | ✅ 13 | 8 codes | 8 |
-| 13 | [$env_var placeholders](#13-env_var-placeholders) | ✅ 14 | 1 code | 1 |
-| 14 | [Nesting depth](#14-nesting-depth) | — | 3 codes | 3 |
-| 15 | [Unsupported dirs](#15-unsupported-directories) | — | 1 code | 1 |
-| | | | **Total** | **54** |
+| 10 | [Google Search tools](#10-google-search-tools) | ✅ 7b | 4 codes | 4 |
+| 11 | [Evaluations](#11-evaluations) | ✅ 9 | 7 codes | 7 |
+| 12 | [Instructions](#12-instruction-files) | — | 6 codes | 6 |
+| 13 | [Environment](#13-environment) | ✅ 13 | 8 codes | 8 |
+| 14 | [$env_var placeholders](#14-env_var-placeholders) | ✅ 14 | 1 code | 1 |
+| 15 | [Nesting depth](#15-nesting-depth) | — | 3 codes | 3 |
+| 16 | [Unsupported dirs](#16-unsupported-directories) | — | 1 code | 1 |
+| | | | **Total** | **59** |
 
 ---
 
@@ -132,18 +133,33 @@ Validates toolset manifests and their OpenAPI schemas.
 
 ## 9. Python Function Tools
 
-Validates Python function tool manifests under `tools/`.
+Validates Python function tool manifests under `tools/`. Tools with a `googleSearchTool` key are handled separately in [§10](#10-google-search-tools).
 
 | Diagnostic Code | Severity | Description | Python |
 |-----------------|----------|-------------|:------:|
 | `CES_PYTHON_TOOL_MANIFEST_INVALID` | error | Tool manifest is not valid JSON | ✅ #7b |
-| `CES_PYTHON_TOOL_MISSING_FUNCTION` | error | Manifest missing `pythonFunction` object | ✅ #7b |
+| `CES_PYTHON_TOOL_MISSING_FUNCTION` | error | Manifest missing `pythonFunction` object (and not a `googleSearchTool`) | ✅ #7b |
 | `CES_PYTHON_TOOL_MISSING_CODE_PATH` | error | `pythonFunction.pythonCode` path not defined | ✅ #7b |
 | `CES_PYTHON_TOOL_CODE_MISSING` | error | Referenced `.py` file doesn't exist on disk | ✅ #7b |
 
 ---
 
-## 10. Evaluations
+## 10. Google Search Tools
+
+Validates Google Search (Vertex AI Search) tool manifests under `tools/`. These tools use a `googleSearchTool` key instead of `pythonFunction` and reference either inline `contextUrls` or a Vertex AI Search `dataStoreId`.
+
+| Diagnostic Code | Severity | Description | Python |
+|-----------------|----------|-------------|:------:|
+| `CES_GOOGLE_SEARCH_TOOL_MISSING_SOURCE` | error | `googleSearchTool` has neither `contextUrls` nor `dataStoreId` — no data source configured | ✅ #7b |
+| `CES_GOOGLE_SEARCH_TOOL_DUAL_SOURCE` | warning | Both `contextUrls` and `dataStoreId` present — ambiguous data source; prefer `dataStoreId` for production | ✅ #7b |
+| `CES_GOOGLE_SEARCH_TOOL_DATASTORE_FORMAT` | warning | `dataStoreId` doesn't match expected format `projects/*/locations/*/collections/*/dataStores/*` | ✅ #7b |
+| `CES_GOOGLE_SEARCH_TOOL_INVALID_URL` | error | `contextUrls` entry is empty or not a string | ✅ #7b |
+
+**Key constraint (L-01):** Golden evaluations cannot use `toolCall` expectations with Google Search tools — use `agentResponse` expectations instead. See [§11 → `CES_EVALUATION_TOOLCALL_GOOGLE_SEARCH`](#11-evaluations).
+
+---
+
+## 11. Evaluations
 
 Validates evaluation manifests under `evaluations/`, including golden and scenario-based evaluation structures.
 
@@ -152,6 +168,7 @@ Validates evaluation manifests under `evaluations/`, including golden and scenar
 | `CES_EVALUATION_MANIFEST_INVALID` | error | Evaluation manifest is not valid JSON | — |
 | `CES_EVALUATION_DISPLAYNAME_MISMATCH` | warning | `displayName` differs from folder name | ✅ #9 |
 | `CES_EVALUATION_TOOLCALL_OPENAPI_OPERATION` | error | Golden eval `toolCall` references an OpenAPI operation (L-01: CES only accepts direct tools) | ✅ #9 |
+| `CES_EVALUATION_TOOLCALL_GOOGLE_SEARCH` | error | Golden eval `toolCall` references a Google Search tool (L-01: use `agentResponse` expectations instead) | ✅ #9 |
 | `CES_EVALUATION_TOOLCALL_UNKNOWN` | error | Golden eval `toolCall` references an unknown tool | ✅ #9 |
 | `CES_EVALUATION_AGENT_ROLE_UNKNOWN` | warning | Golden eval `agentResponse.role` doesn't match any agent directory | ✅ #9b |
 | `CES_EVALUATION_SCENARIO_TOOL_UNKNOWN` | error | Scenario `expectedToolCall.tool` not found in tools/toolsets | ✅ #9c |
@@ -159,7 +176,7 @@ Validates evaluation manifests under `evaluations/`, including golden and scenar
 
 ---
 
-## 11. Instruction Files
+## 12. Instruction Files
 
 Validates CES instruction files (`instruction.txt`, `global_instruction.txt`) for structural correctness. **Plugin-only** — the Python script does not parse instruction file internals.
 
@@ -174,7 +191,7 @@ Validates CES instruction files (`instruction.txt`, `global_instruction.txt`) fo
 
 ---
 
-## 12. Environment
+## 13. Environment
 
 Validates `environment.json` structure and cross-references. Aligned with the [official CES export docs](https://docs.cloud.google.com/customer-engagement-ai/conversational-agents/ps/export).
 
@@ -194,7 +211,7 @@ Validates `environment.json` structure and cross-references. Aligned with the [o
 
 ---
 
-## 13. $env_var Placeholders
+## 14. $env_var Placeholders
 
 CES replaces certain managed fields with the literal string `"$env_var"` during export. On import, these are substituted from `environment.json`. This check detects orphaned placeholders.
 
@@ -206,7 +223,7 @@ CES replaces certain managed fields with the literal string `"$env_var"` during 
 
 ---
 
-## 14. Nesting Depth
+## 15. Nesting Depth
 
 Warns when directory nesting exceeds standard CES patterns. **Plugin-only.**
 
@@ -218,7 +235,7 @@ Warns when directory nesting exceeds standard CES patterns. **Plugin-only.**
 
 ---
 
-## 15. Unsupported Directories
+## 16. Unsupported Directories
 
 Flags directories that CES does not support during import. **Plugin-only.**
 

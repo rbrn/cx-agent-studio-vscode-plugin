@@ -1402,3 +1402,258 @@ test("scenario eval with unknown mockToolResponse is reported", () => {
   const issues = runValidation(files);
   assert.equal(hasCode(issues, "CES_EVALUATION_SCENARIO_MOCK_TOOL_UNKNOWN"), true);
 });
+
+// ── Google Search Tool validation tests ───────────────────────────────────
+
+test("googleSearchTool with dataStoreId passes validation", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session", "fee_schedule_lookup"],
+    },
+    null,
+    2,
+  );
+  files["tools/fee_schedule_lookup/fee_schedule_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_schedule_lookup",
+        description: "Searches fee schedule",
+        dataStoreId: "projects/my-project/locations/global/collections/default_collection/dataStores/my-store-123",
+      },
+      displayName: "fee_schedule_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_MISSING_SOURCE"), false);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_DATASTORE_FORMAT"), false);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_FUNCTION"), false);
+});
+
+test("googleSearchTool with contextUrls passes validation", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        contextUrls: ["https://example.com/fees.pdf"],
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_MISSING_SOURCE"), false);
+  assert.equal(hasCode(issues, "CES_PYTHON_TOOL_MISSING_FUNCTION"), false);
+});
+
+test("googleSearchTool with no contextUrls or dataStoreId produces error", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_MISSING_SOURCE"), true);
+});
+
+test("googleSearchTool with both contextUrls and dataStoreId produces warning", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        contextUrls: ["https://example.com/fees.pdf"],
+        dataStoreId: "projects/my-project/locations/global/collections/default_collection/dataStores/store-1",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_DUAL_SOURCE"), true);
+});
+
+test("googleSearchTool with invalid dataStoreId format produces warning", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        dataStoreId: "bad-format-store-id",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_DATASTORE_FORMAT"), true);
+});
+
+test("googleSearchTool with empty contextUrls entry produces error", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        contextUrls: ["https://example.com/fees.pdf", ""],
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_GOOGLE_SEARCH_TOOL_INVALID_URL"), true);
+});
+
+test("googleSearchToolNames are tracked in package model", () => {
+  const files = baseValidFixture();
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        dataStoreId: "projects/p/locations/l/collections/c/dataStores/d",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+
+  const rootPath = createFixture(files);
+  try {
+    const model = buildPackageModel(rootPath);
+    assert.equal(model.googleSearchToolNames.has("fee_lookup"), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("L-01: golden eval toolCall referencing googleSearchTool is an error", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session", "fee_lookup"],
+    },
+    null,
+    2,
+  );
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        dataStoreId: "projects/p/locations/l/collections/c/dataStores/d",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+  files["evaluations/fee_test/fee_test.json"] = JSON.stringify(
+    {
+      displayName: "fee_test",
+      golden: {
+        turns: [
+          {
+            steps: [
+              {
+                expectation: {
+                  toolCall: { tool: "fee_lookup" },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_GOOGLE_SEARCH"), true);
+});
+
+test("golden eval with agentResponse for googleSearchTool passes (no L-01 error)", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session", "fee_lookup"],
+    },
+    null,
+    2,
+  );
+  files["tools/fee_lookup/fee_lookup.json"] = JSON.stringify(
+    {
+      googleSearchTool: {
+        name: "fee_lookup",
+        description: "Searches fees",
+        dataStoreId: "projects/p/locations/l/collections/c/dataStores/d",
+      },
+      displayName: "fee_lookup",
+    },
+    null,
+    2,
+  );
+  files["evaluations/fee_test/fee_test.json"] = JSON.stringify(
+    {
+      displayName: "fee_test",
+      golden: {
+        turns: [
+          {
+            steps: [
+              {
+                expectation: {
+                  agentResponse: {
+                    role: "voice_banking_agent",
+                    chunks: [{ text: "The fee is 5 EUR" }],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_GOOGLE_SEARCH"), false);
+  assert.equal(hasCode(issues, "CES_EVALUATION_TOOLCALL_UNKNOWN"), false);
+});

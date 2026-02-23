@@ -46,6 +46,13 @@ export function buildPackageModel(rootPath: string): PackageModel {
 
   const { directTools, openApiOperations, openApiNamespacedOperations } = buildToolInventory(agentInfos, toolsetInfos, pythonToolInfos);
 
+  const googleSearchToolNames = new Set<string>();
+  for (const toolInfo of pythonToolInfos) {
+    if (isRecord(toolInfo.manifestData) && isRecord(toolInfo.manifestData.googleSearchTool)) {
+      googleSearchToolNames.add(toolInfo.name);
+    }
+  }
+
   const environmentPath = path.join(rootPath, "environment.json");
   const environment = fs.existsSync(environmentPath)
     ? (() => {
@@ -80,6 +87,7 @@ export function buildPackageModel(rootPath: string): PackageModel {
     directTools,
     openApiOperations,
     openApiNamespacedOperations,
+    googleSearchToolNames,
   };
 }
 
