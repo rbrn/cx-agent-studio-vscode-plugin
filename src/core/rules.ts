@@ -25,6 +25,36 @@ const CALLBACK_KEYS = [
   "beforeToolCallbacks",
 ] as const;
 
+type ManifestImportCompatibilityRule = {
+  code: string;
+  path: readonly string[];
+  fieldName: string;
+  expectedDescription: string;
+  exampleValue: string;
+};
+
+type ScalarTokenInfo = {
+  line: number;
+  token: string;
+};
+
+const INT32_LITERAL_PATTERN = /^[+-]?\d+$/;
+
+const MANIFEST_IMPORT_COMPATIBILITY_RULES: readonly ManifestImportCompatibilityRule[] = [
+  {
+    code: "CES_MANIFEST_IMPORT_INT32_INVALID",
+    path: [
+      "evaluationMetricsThresholds",
+      "goldenEvaluationMetricsThresholds",
+      "turnLevelMetricsThresholds",
+      "semanticSimilaritySuccessThreshold",
+    ],
+    fieldName: "semanticSimilaritySuccessThreshold",
+    expectedDescription: "an unquoted integer literal",
+    exampleValue: "3",
+  },
+];
+
 export function runRules(model: PackageModel): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
@@ -135,6 +165,7 @@ function validateManifest(model: PackageModel, issues: ValidationIssue[]): void 
 
   validateGlobalInstructionReference(model, issues);
   validateGuardrailReferences(model, issues);
+  validateManifestImportCompatibility(model, issues);
 }
 
 function validateRootAgentReference(model: PackageModel, rootAgent: string, issues: ValidationIssue[]): void {
@@ -252,6 +283,34 @@ function validateGuardrailReferences(model: PackageModel, issues: ValidationIssu
         );
       }
     }
+  }
+}
+
+function validateManifestImportCompatibility(model: PackageModel, issues: ValidationIssue[]): void {
+  if (!isRecord(model.manifestData) || !model.manifestPath) {
+    return;
+  }
+
+  for (const rule of MANIFEST_IMPORT_COMPATIBILITY_RULES) {
+    const value = getNestedValue(model.manifestData, rule.path);
+    if (value === undefined) {
+      continue;
+    }
+
+    const scalarToken = findScalarTokenForField(model.manifestPath, rule.fieldName);
+    if (isImportSafeInt32Value(value, scalarToken?.token)) {
+      continue;
+    }
+
+    const actualValue = scalarToken?.token ?? JSON.stringify(value);
+    pushIssue(
+      issues,
+      rule.code,
+      `${rule.path.join(".")} must be ${rule.expectedDescription} for CES import compatibility. Found ${actualValue}; use ${rule.exampleValue} instead.`,
+      "error",
+      model.manifestPath,
+      scalarToken?.line ?? findLineContaining(model.manifestPath, rule.fieldName),
+    );
   }
 }
 
@@ -1260,6 +1319,80 @@ function containsEnvVarPlaceholder(value: unknown): boolean {
   }
 
   return false;
+}
+
+function getNestedValue(root: Record<string, unknown>, valuePath: readonly string[]): unknown {
+  let current: unknown = root;
+
+  for (const segment of valuePath) {
+    if (!isRecord(current) || !(segment in current)) {
+      return undefined;
+    }
+
+    current = current[segment];
+  }
+
+  return current;
+}
+
+function findScalarTokenForField(filePath: string, fieldName: string): ScalarTokenInfo | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+
+  const jsonPattern = new RegExp(`"${escapeRegExp(fieldName)}"\\s*:\\s*([^,\\s][^,]*)`);
+  const yamlPattern = new RegExp(`${escapeRegExp(fieldName)}\\s*:\\s*(.+)$`);
+  const lines = content.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    if (!line.includes(fieldName)) {
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const jsonMatch = line.match(jsonPattern);
+    if (jsonMatch) {
+      return { line: index + 1, token: normalizeScalarToken(jsonMatch[1] ?? "") };
+    }
+
+    const yamlMatch = line.match(yamlPattern);
+    if (yamlMatch) {
+      const token = normalizeScalarToken((yamlMatch[1] ?? "").split(/\s+#/, 1)[0] ?? "");
+      if (token.length > 0) {
+        return { line: index + 1, token };
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeScalarToken(token: string): string {
+  return token.trim().replace(/[\]},]+$/, "").trim();
+}
+
+function isImportSafeInt32Value(value: unknown, rawToken?: string): boolean {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return false;
+  }
+
+  if (!rawToken) {
+    return true;
+  }
+
+  return INT32_LITERAL_PATTERN.test(normalizeScalarToken(rawToken));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

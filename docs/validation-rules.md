@@ -2,7 +2,7 @@
 
 > **Auto-generated from source:** `ces-plugin/src/core/rules.ts` (v0.8.0) and `ces-agent/scripts/validate-package.py`
 >
-> Last updated: 2026-02-13
+> Last updated: 2026-03-12
 
 This document is the single source of truth for every validation check performed by the **CES Package Validator VS Code Extension** and the **standalone Python validation script**. Both tools aim for parity — where a check exists in one but not the other, it is noted.
 
@@ -12,7 +12,7 @@ This document is the single source of truth for every validation check performed
 
 | # | Category | Python check | Plugin diagnostic codes | Count |
 |---|----------|:------------:|:-----------------------:|:-----:|
-| 1 | [Manifest](#1-manifest) | ✅ 1 | 5 codes | 5 |
+| 1 | [Manifest](#1-manifest) | ✅ 1, 1a | 6 codes | 6 |
 | 2 | [Root agent](#2-root-agent) | ✅ 2 | 3 codes | 3 |
 | 3 | [Global instruction](#3-global-instruction) | ✅ 3 | 1 code | 1 |
 | 4 | [Guardrails](#4-guardrails) | ✅ 4 | 3 codes | 3 |
@@ -28,7 +28,7 @@ This document is the single source of truth for every validation check performed
 | 14 | [$env_var placeholders](#14-env_var-placeholders) | ✅ 14 | 1 code | 1 |
 | 15 | [Nesting depth](#15-nesting-depth) | — | 3 codes | 3 |
 | 16 | [Unsupported dirs](#16-unsupported-directories) | — | 1 code | 1 |
-| | | | **Total** | **59** |
+| | | | **Total** | **60** |
 
 ---
 
@@ -43,6 +43,7 @@ Validates that a CES package root contains a valid `app.json` or `app.yaml`.
 | `CES_APP_JSON_ONLY` | info | Only `app.json` found; `app.yaml` is preferred | — |
 | `CES_MANIFEST_PARSE_ERROR` | error | Manifest file is not valid JSON/YAML | ✅ #1 |
 | `CES_MANIFEST_INVALID_ROOT` | error | Parsed manifest root is not an object | — |
+| `CES_MANIFEST_IMPORT_INT32_INVALID` | error | Known import-sensitive manifest field uses a non-integer value (for example decimal `semanticSimilaritySuccessThreshold`) | ✅ #1a |
 
 ---
 
@@ -252,6 +253,7 @@ Quick reference mapping Python script check numbers to categories above:
 | Python # | What it checks | Section |
 |:--------:|----------------|:-------:|
 | 1 | `app.json` exists and parses | [§1](#1-manifest) |
+| 1a | Known manifest import-compatibility rules (for example int32-only threshold fields) | [§1](#1-manifest) |
 | 2 | `rootAgent` resolves | [§2](#2-root-agent) |
 | 3 | `globalInstruction` path exists | [§3](#3-global-instruction) |
 | 4 | Guardrail cross-references | [§4](#4-guardrails) |

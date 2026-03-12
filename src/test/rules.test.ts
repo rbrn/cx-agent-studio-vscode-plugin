@@ -93,6 +93,69 @@ test("valid package fixture passes MVP checks", () => {
   assert.equal(issues.length, 0);
 });
 
+test("manifest import compatibility accepts integer semantic similarity threshold", () => {
+  const files = baseValidFixture();
+  files["app.yaml"] = [
+    "displayName: sample_agent",
+    "rootAgent: voice_banking_agent",
+    "globalInstruction: global_instruction.txt",
+    "guardrails: []",
+    "evaluationMetricsThresholds:",
+    "  goldenEvaluationMetricsThresholds:",
+    "    turnLevelMetricsThresholds:",
+    "      semanticSimilaritySuccessThreshold: 3",
+    "",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_MANIFEST_IMPORT_INT32_INVALID"), false);
+});
+
+test("manifest import compatibility rejects decimal semantic similarity threshold in app.json", () => {
+  const files = baseValidFixture();
+  delete files["app.yaml"];
+  files["app.json"] = JSON.stringify(
+    {
+      displayName: "sample_agent",
+      rootAgent: "voice_banking_agent",
+      globalInstruction: "global_instruction.txt",
+      guardrails: [],
+      evaluationMetricsThresholds: {
+        goldenEvaluationMetricsThresholds: {
+          turnLevelMetricsThresholds: {
+            semanticSimilaritySuccessThreshold: 2.5,
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_MANIFEST_IMPORT_INT32_INVALID"), true);
+  const issue = issues.find((i) => i.code === "CES_MANIFEST_IMPORT_INT32_INVALID");
+  assert.ok(issue?.message.includes("semanticSimilaritySuccessThreshold"));
+});
+
+test("manifest import compatibility rejects float-like integer literals in app.yaml", () => {
+  const files = baseValidFixture();
+  files["app.yaml"] = [
+    "displayName: sample_agent",
+    "rootAgent: voice_banking_agent",
+    "globalInstruction: global_instruction.txt",
+    "guardrails: []",
+    "evaluationMetricsThresholds:",
+    "  goldenEvaluationMetricsThresholds:",
+    "    turnLevelMetricsThresholds:",
+    "      semanticSimilaritySuccessThreshold: 3.0",
+    "",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_MANIFEST_IMPORT_INT32_INVALID"), true);
+});
+
 test("missing rootAgent directory is reported", () => {
   const files = baseValidFixture();
   files["app.yaml"] = [
