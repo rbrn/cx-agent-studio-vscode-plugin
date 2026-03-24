@@ -3,7 +3,10 @@
  * VS Code extension entrypoint for CES validator.
  */
 
+import * as path from "path";
 import * as vscode from "vscode";
+import { DeploymentValidationError, CesImportOptions, importPackageToCes, packageCesPackage } from "./core/deployment";
+import { findPackageRootForPath } from "./core/packageDiscovery";
 import { ValidationOrchestrator } from "./core/orchestrator";
 import { CesPackageTreeProvider } from "./core/treeProvider";
 
@@ -23,6 +26,15 @@ function setLanguageForInstructions(document: vscode.TextDocument): void {
     );
   }
 }
+
+type StoredImportProfile = {
+  projectId?: string;
+  location?: string;
+  appId?: string;
+  displayName?: string;
+  importStrategy?: "REPLACE" | "OVERWRITE";
+  ignoreAppLock?: boolean;
+};
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const outputChannel = vscode.window.createOutputChannel("CES Validator");
@@ -81,6 +93,137 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
       vscode.commands.registerCommand("cesValidator.clearDiagnostics", () => {
         orchestrator.clearDiagnostics();
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.packageCurrentPackage", async () => {
+        const rootPath = await resolveTargetPackageRoot(orchestrator);
+        if (!rootPath) {
+          return;
+        }
+
+        outputChannel.show(true);
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Packaging CES package '${path.basename(rootPath)}'`,
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ message: "Validating package" });
+            try {
+              const result = await packageCesPackage(rootPath);
+              outputChannel.appendLine(`[CES] Packaged ${rootPath}`);
+              outputChannel.appendLine(`[CES] ZIP      : ${result.zipFile}`);
+              outputChannel.appendLine(`[CES] Latest   : ${result.latestZipFile}`);
+              outputChannel.appendLine(`[CES] Size     : ${result.zipSizeBytes} bytes`);
+              outputChannel.appendLine(`[CES] SHA256   : ${result.sha256}`);
+
+              await vscode.window.showInformationMessage(
+                `CES package ready: ${path.basename(result.zipFile)}`,
+                "Reveal in Finder",
+              ).then((selection) => {
+                if (selection === "Reveal in Finder") {
+                  return vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(result.zipFile));
+                }
+                return undefined;
+              });
+            } catch (error) {
+              handleCommandError(error, outputChannel);
+            }
+          },
+        );
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.importCurrentPackage", async () => {
+        const rootPath = await resolveTargetPackageRoot(orchestrator);
+        if (!rootPath) {
+          return;
+        }
+
+        const options = await promptForCesImportOptions(context, rootPath, "import");
+        if (!options) {
+          return;
+        }
+
+        outputChannel.show(true);
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Importing '${path.basename(rootPath)}' to CES`,
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ message: "Packaging archive" });
+            try {
+              const bundle = await packageCesPackage(rootPath);
+              progress.report({ message: "Uploading to CES" });
+              const result = await importPackageToCes(bundle.zipFile, options);
+              saveImportProfile(context, rootPath, options);
+              outputChannel.appendLine(`[CES] Import complete: ${result.importedAppName ?? result.operationName}`);
+              outputChannel.appendLine(`[CES] Endpoint : ${result.endpoint}`);
+              outputChannel.appendLine(`[CES] Parent   : ${result.parent}`);
+              outputChannel.appendLine(`[CES] Operation: ${result.operationName}`);
+              if (result.warnings.length > 0) {
+                outputChannel.appendLine(`[CES] Warnings : ${result.warnings.join(" | ")}`);
+              }
+
+              const warningSuffix = result.warnings.length > 0 ? ` (${result.warnings.length} warning(s))` : "";
+              void vscode.window.showInformationMessage(
+                `CES import completed for ${result.importedAppName ?? path.basename(rootPath)}${warningSuffix}`,
+              );
+            } catch (error) {
+              handleCommandError(error, outputChannel);
+            }
+          },
+        );
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.pushCurrentPackage", async () => {
+        const rootPath = await resolveTargetPackageRoot(orchestrator);
+        if (!rootPath) {
+          return;
+        }
+
+        const options = await promptForCesImportOptions(context, rootPath, "push");
+        if (!options) {
+          return;
+        }
+
+        outputChannel.show(true);
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Pushing '${path.basename(rootPath)}' to remote CES app`,
+            cancellable: false,
+          },
+          async (progress) => {
+            progress.report({ message: "Packaging archive" });
+            try {
+              const bundle = await packageCesPackage(rootPath);
+              progress.report({ message: `Pushing to app '${options.appId}'` });
+              const result = await importPackageToCes(bundle.zipFile, options);
+              saveImportProfile(context, rootPath, options);
+              outputChannel.appendLine(`[CES] Push complete: ${result.importedAppName ?? result.operationName}`);
+              outputChannel.appendLine(`[CES] App ID   : ${options.appId}`);
+              outputChannel.appendLine(`[CES] Strategy : ${options.importStrategy}`);
+              if (result.warnings.length > 0) {
+                outputChannel.appendLine(`[CES] Warnings : ${result.warnings.join(" | ")}`);
+              }
+
+              void vscode.window.showInformationMessage(
+                `CES push completed for app '${options.appId}'`,
+              );
+            } catch (error) {
+              handleCommandError(error, outputChannel);
+            }
+          },
+        );
       }),
     );
 
@@ -155,4 +298,175 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   // No-op. VS Code disposes registrations via context subscriptions.
+}
+
+async function resolveTargetPackageRoot(orchestrator: ValidationOrchestrator): Promise<string | null> {
+  const activeUri = vscode.window.activeTextEditor?.document.uri;
+  if (activeUri?.scheme === "file") {
+    const activeRoot = findPackageRootForPath(activeUri.fsPath);
+    if (activeRoot) {
+      return activeRoot;
+    }
+  }
+
+  const roots = orchestrator.getPackageRoots();
+  if (roots.length === 0) {
+    void vscode.window.showWarningMessage("No CES package root was found in the current workspace.");
+    return null;
+  }
+
+  if (roots.length === 1) {
+    return roots[0] ?? null;
+  }
+
+  const selected = await vscode.window.showQuickPick(
+    roots.map((rootPath) => ({
+      label: path.basename(rootPath),
+      description: rootPath,
+      rootPath,
+    })),
+    {
+      placeHolder: "Select the CES package to package or deploy",
+    },
+  );
+
+  return selected?.rootPath ?? null;
+}
+
+async function promptForCesImportOptions(
+  context: vscode.ExtensionContext,
+  rootPath: string,
+  mode: "import" | "push",
+): Promise<CesImportOptions | null> {
+  const defaults = getStoredImportProfile(context, rootPath);
+
+  const projectId = await vscode.window.showInputBox({
+    title: mode === "push" ? "Push to CES" : "Import to CES",
+    prompt: "Google Cloud project ID",
+    value: defaults.projectId ?? "voice-banking-poc",
+    ignoreFocusOut: true,
+    validateInput: (value) => value.trim().length > 0 ? undefined : "Project ID is required.",
+  });
+  if (!projectId) {
+    return null;
+  }
+
+  const location = await vscode.window.showInputBox({
+    title: mode === "push" ? "Push to CES" : "Import to CES",
+    prompt: "CES location (for example: us or eu)",
+    value: defaults.location ?? "us",
+    ignoreFocusOut: true,
+    validateInput: (value) => value.trim().length > 0 ? undefined : "Location is required.",
+  });
+  if (!location) {
+    return null;
+  }
+
+  const requireAppId = mode === "push";
+  const appId = await vscode.window.showInputBox({
+    title: mode === "push" ? "Push to CES" : "Import to CES",
+    prompt: requireAppId
+      ? "Target remote app ID"
+      : "Target app ID (optional — leave blank for a new server-assigned app ID)",
+    value: defaults.appId ?? "",
+    ignoreFocusOut: true,
+    validateInput: (value) => validateAppIdInput(value, requireAppId),
+  });
+  if (appId === undefined) {
+    return null;
+  }
+
+  let displayName = "";
+  if (!appId.trim()) {
+    displayName = await vscode.window.showInputBox({
+      title: "Import to CES",
+      prompt: "Display name for the new app (optional)",
+      value: defaults.displayName ?? path.basename(rootPath),
+      ignoreFocusOut: true,
+    }) ?? "";
+  }
+
+  const strategySelection = await vscode.window.showQuickPick(
+    ["REPLACE", "OVERWRITE"].map((value) => ({
+      label: value,
+      detail: value === "OVERWRITE"
+        ? "Recommended for pushing updates to an existing remote app."
+        : "Create/restore with replace semantics.",
+    })),
+    {
+      title: mode === "push" ? "Push to CES" : "Import to CES",
+      placeHolder: "Select the CES import conflict strategy",
+      ignoreFocusOut: true,
+    },
+  );
+  if (!strategySelection) {
+    return null;
+  }
+
+  const ignoreLockSelection = await vscode.window.showQuickPick(
+    [
+      { label: "No", value: false, detail: "Respect the current app lock status." },
+      { label: "Yes", value: true, detail: "Ask CES to ignore the current app lock during import." },
+    ],
+    {
+      title: mode === "push" ? "Push to CES" : "Import to CES",
+      placeHolder: "Ignore the target app lock?",
+      ignoreFocusOut: true,
+    },
+  );
+  if (!ignoreLockSelection) {
+    return null;
+  }
+
+  return {
+    projectId: projectId.trim(),
+    location: location.trim(),
+    appId: appId.trim() || undefined,
+    displayName: displayName.trim() || undefined,
+    importStrategy: strategySelection.label as "REPLACE" | "OVERWRITE",
+    ignoreAppLock: ignoreLockSelection.value,
+    pollIntervalSeconds: 5,
+    pollTimeoutSeconds: 300,
+  };
+}
+
+function handleCommandError(error: unknown, outputChannel: vscode.OutputChannel): void {
+  if (error instanceof DeploymentValidationError) {
+    outputChannel.appendLine(`[CES] Deployment blocked: ${error.message}`);
+    for (const issue of error.issues.filter((issue) => issue.severity === "error")) {
+      outputChannel.appendLine(`[CES]   [${issue.code}] ${issue.file}${issue.line ? `:${issue.line}` : ""} ${issue.message}`);
+    }
+    void vscode.window.showErrorMessage(error.message);
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  outputChannel.appendLine(`[CES] Command failed: ${message}`);
+  void vscode.window.showErrorMessage(message);
+}
+
+function getStoredImportProfile(context: vscode.ExtensionContext, rootPath: string): StoredImportProfile {
+  return context.workspaceState.get<StoredImportProfile>(`cesValidator.importProfile:${rootPath}`, {});
+}
+
+function saveImportProfile(context: vscode.ExtensionContext, rootPath: string, options: CesImportOptions): void {
+  void context.workspaceState.update(`cesValidator.importProfile:${rootPath}`, {
+    projectId: options.projectId,
+    location: options.location,
+    appId: options.appId,
+    displayName: options.displayName,
+    importStrategy: options.importStrategy,
+    ignoreAppLock: options.ignoreAppLock,
+  } satisfies StoredImportProfile);
+}
+
+function validateAppIdInput(value: string, requireValue: boolean): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return requireValue ? "App ID is required for push." : undefined;
+  }
+
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{4,35}$/.test(trimmed)
+    ? undefined
+    : "App ID must match [A-Za-z0-9][A-Za-z0-9_-]{4,35} (length 5-36).";
 }

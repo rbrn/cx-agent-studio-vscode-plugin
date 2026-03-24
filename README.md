@@ -1,6 +1,6 @@
 # CES Package Validator — VS Code Extension
 
-Real-time validation, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
+Real-time validation, packaging, remote import/push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
 ![Version](https://img.shields.io/badge/version-0.8.1-green)
@@ -64,6 +64,20 @@ The extension automatically detects CES Agent Studio package roots (folders cont
 | **Nesting** | Warns on excessive directory nesting beyond standard CES patterns |
 | **Unsupported dirs** | Flags non-standard directories like `evaluationDatasets` |
 
+### Package, import, and push workflows
+
+The extension can now package the currently selected CES package, validate that the generated ZIP still contains every required referenced runtime file, and optionally upload it to CES.
+
+What the deploy commands do:
+
+- run the same package validation rules as the sidebar/Problems panel
+- create a versioned ZIP beside the package root plus a `latest` ZIP copy
+- validate the finished archive contents before upload
+- import a new CES app or push updates to an existing remote app via `apps:importApp`
+- reuse your last-used project/location/app ID values per package root
+
+> **Requirements for import/push:** the extension shell environment must have `zip`, `unzip`, and `gcloud` available.
+
 ### Instruction file support
 
 CES agent instruction files (`instruction.txt`, `global_instruction.txt`) get:
@@ -87,6 +101,9 @@ A dedicated **CES Package** sidebar shows the full package structure:
 | Command | Description |
 |---------|-------------|
 | `CES Validator: Validate Current Package` | Run validation on the package containing the active file |
+| `CES Validator: Package Current Package` | Validate and create a deployable ZIP archive for the current CES package |
+| `CES Validator: Import Current Package to CES` | Package the current CES package and import it as a new or existing CES app |
+| `CES Validator: Push Current Package to Remote CES App` | Package the current CES package and push it to an existing remote CES app |
 | `CES Validator: Clear Diagnostics` | Clear all CES validation diagnostics |
 | `Refresh` (tree view title bar) | Re-run validation and refresh the Package Explorer |
 
@@ -194,6 +211,16 @@ ces-validate /path/to/agent-package
 - First protected field: `evaluationMetricsThresholds.goldenEvaluationMetricsThresholds.turnLevelMetricsThresholds.semanticSimilaritySuccessThreshold`
 - Rejects decimal values such as `2.5` and float-like literals such as `3.0` before VSIX users hit CX Studio import-time proto errors.
 - Added focused regression tests and updated validation rule documentation.
+
+### 0.9.0 (2026-03-24)
+
+**Packaging and CES deployment support:**
+
+- Added `CES Validator: Package Current Package`
+- Added `CES Validator: Import Current Package to CES`
+- Added `CES Validator: Push Current Package to Remote CES App`
+- Added archive-member validation to catch ZIP packaging mismatches before CES import fails
+- Added CES `apps:importApp` integration using active `gcloud` credentials
 
 ### 0.7.0 (2026-02-12)
 

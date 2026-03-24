@@ -2,7 +2,7 @@
   "name": "ces-package-validator",
   "displayName": "CES Package Validator",
   "description": "Real-time validation for Google Customer Engagement Suite / Dialogflow CX Agent Studio package files.",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "publisher": "acmebank",
   "repository": {
     "type": "git",
@@ -24,7 +24,10 @@
     "onStartupFinished",
     "onLanguage:ces-instruction",
     "onCommand:cesValidator.validateCurrentPackage",
-    "onCommand:cesValidator.clearDiagnostics"
+    "onCommand:cesValidator.clearDiagnostics",
+    "onCommand:cesValidator.packageCurrentPackage",
+    "onCommand:cesValidator.importCurrentPackage",
+    "onCommand:cesValidator.pushCurrentPackage"
   ],
   "contributes": {
     "configurationDefaults": {
@@ -87,6 +90,18 @@
       {
         "command": "cesValidator.validateCurrentPackage",
         "title": "CES Validator: Validate Current Package"
+      },
+      {
+        "command": "cesValidator.packageCurrentPackage",
+        "title": "CES Validator: Package Current Package"
+      },
+      {
+        "command": "cesValidator.importCurrentPackage",
+        "title": "CES Validator: Import Current Package to CES"
+      },
+      {
+        "command": "cesValidator.pushCurrentPackage",
+        "title": "CES Validator: Push Current Package to Remote CES App"
       },
       {
         "command": "cesValidator.clearDiagnostics",
