@@ -3,7 +3,7 @@
 Real-time validation, packaging, remote import/push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.8.1-green)
+![Version](https://img.shields.io/badge/version-0.9.0-green)
 
 ---
 
@@ -14,13 +14,13 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.8.1.vsix
+code --install-extension releases/ces-package-validator-0.9.0.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
 > ```bash
 > "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
->   --install-extension releases/ces-package-validator-0.8.1.vsix
+>   --install-extension releases/ces-package-validator-0.9.0.vsix
 > ```
 
 ### Option B — VS Code UI
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.8.1.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.8.1.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.9.0.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -135,7 +135,7 @@ npm run bundle         # esbuild bundle only
 ### Test
 
 ```bash
-npm test               # Runs all 75 tests
+npm test               # Runs all 77 tests
 ```
 
 ### Package a new VSIX
@@ -176,7 +176,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.8.1.vsix # Pre-built extension
+│   └── ces-package-validator-0.9.0.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -203,14 +203,7 @@ ces-validate /path/to/agent-package
 
 ## 📋 Changelog
 
-### 0.8.1 (2026-03-12)
-
-**Manifest import-compatibility hardening:**
-
-- Added `CES_MANIFEST_IMPORT_INT32_INVALID` to catch known import-sensitive manifest fields that must be integer literals for CES import compatibility.
-- First protected field: `evaluationMetricsThresholds.goldenEvaluationMetricsThresholds.turnLevelMetricsThresholds.semanticSimilaritySuccessThreshold`
-- Rejects decimal values such as `2.5` and float-like literals such as `3.0` before VSIX users hit CX Studio import-time proto errors.
-- Added focused regression tests and updated validation rule documentation.
+The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ### 0.9.0 (2026-03-24)
 
@@ -221,6 +214,15 @@ ces-validate /path/to/agent-package
 - Added `CES Validator: Push Current Package to Remote CES App`
 - Added archive-member validation to catch ZIP packaging mismatches before CES import fails
 - Added CES `apps:importApp` integration using active `gcloud` credentials
+
+### 0.8.1 (2026-03-12)
+
+**Manifest import-compatibility hardening:**
+
+- Added `CES_MANIFEST_IMPORT_INT32_INVALID` to catch known import-sensitive manifest fields that must be integer literals for CES import compatibility.
+- First protected field: `evaluationMetricsThresholds.goldenEvaluationMetricsThresholds.turnLevelMetricsThresholds.semanticSimilaritySuccessThreshold`
+- Rejects decimal values such as `2.5` and float-like literals such as `3.0` before VSIX users hit CX Studio import-time proto errors.
+- Added focused regression tests and updated validation rule documentation.
 
 ### 0.7.0 (2026-02-12)
 
