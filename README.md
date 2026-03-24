@@ -78,6 +78,15 @@ What the deploy commands do:
 
 > **Requirements for import/push:** the extension shell environment must have `zip`, `unzip`, and `gcloud` available.
 
+### Clickable tool navigation
+
+In the **Tool Inventory** section of the CES Package Explorer, and inside agent-specific **Tools** / **Toolsets** sections, clicking a tool now jumps directly to its definition:
+
+- **Python tools** open the underlying `pythonCode` file when available
+- **OpenAPI operations** open the matching schema file at the relevant `operationId`
+- **Toolset references** open the toolset manifest, with nested operations opening the schema target
+- tools without a direct code target fall back to their manifest file
+
 ### Instruction file support
 
 CES agent instruction files (`instruction.txt`, `global_instruction.txt`) get:
@@ -135,7 +144,7 @@ npm run bundle         # esbuild bundle only
 ### Test
 
 ```bash
-npm test               # Runs all 77 tests
+npm test               # Runs all 80 tests
 ```
 
 ### Package a new VSIX

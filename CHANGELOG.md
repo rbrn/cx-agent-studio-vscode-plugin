@@ -2,6 +2,16 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## Unreleased
+
+### Added
+
+- CES Package Explorer tool inventory nodes now navigate to tool definitions when clicked
+- Agent node `Tools` and `Toolsets` references now navigate to their definitions when clicked
+- Direct Python tools open their `pythonCode` implementation when available
+- OpenAPI operations open the schema file at the matching `operationId`
+- Toolset references open the toolset manifest, with nested toolset operations opening their schema definition
+
 ## 0.9.0 — 2026-03-24
 
 ### Added

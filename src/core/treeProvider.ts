@@ -9,6 +9,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { buildPackageModel } from "./packageIndex";
 import { runRules } from "./rules";
+import { resolveDirectToolNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "./toolNavigation";
 import { PackageModel, ValidationIssue } from "./types";
 
 // ── Tree item types ─────────────────────────────────────────────────────────
@@ -165,7 +166,12 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
 
       const childAgents = Array.isArray(agent.manifestData?.childAgents) ? agent.manifestData.childAgents as string[] : [];
       const tools = Array.isArray(agent.manifestData?.tools) ? agent.manifestData.tools as string[] : [];
-      const toolsets = Array.isArray(agent.manifestData?.toolsets) ? (agent.manifestData.toolsets as Array<Record<string, unknown>>).map((t) => t.toolset as string).filter(Boolean) : [];
+      const toolsetEntries = Array.isArray(agent.manifestData?.toolsets)
+        ? (agent.manifestData.toolsets as Array<Record<string, unknown>>).filter((entry) => this.isRecord(entry))
+        : [];
+      const toolsets = toolsetEntries
+        .map((entry) => typeof entry.toolset === "string" ? entry.toolset : "")
+        .filter((name) => name.length > 0);
 
       const details: string[] = [];
       if (childAgents.length > 0) { details.push(`${childAgents.length} child agent${childAgents.length > 1 ? "s" : ""}`); }
@@ -218,7 +224,10 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
         });
       }
 
+      const referenceChildren = this.buildAgentReferenceNodes(model, tools, toolsetEntries);
+
       const issueChildren = agentIssues.filter((i) => !i.code.startsWith("CES_INSTRUCTION")).map((i) => this.issueNode(i));
+      const childNodes = [...instrChildren, ...referenceChildren, ...issueChildren];
 
       return {
         kind: "agent" as NodeKind,
@@ -227,7 +236,7 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
         filePath: agent.manifestPath,
         status: this.statusFromIssues(agentIssues),
         tooltip: `Agent: ${agent.name}\n${details.join("\n")}`,
-        children: [...instrChildren, ...issueChildren].length > 0 ? [...instrChildren, ...issueChildren] : undefined,
+        children: childNodes.length > 0 ? childNodes : undefined,
       };
     });
 
@@ -334,21 +343,33 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
   }
 
   private buildToolInventoryNode(model: PackageModel): TreeNode {
-    const directChildren: TreeNode[] = [...model.directTools].sort().map((t) => ({
-      kind: "tool" as NodeKind,
-      label: t,
-      description: "direct tool",
-      iconId: "symbol-method",
-      status: "pass" as const,
-    }));
+    const directChildren: TreeNode[] = [...model.directTools].sort().map((toolName) => {
+      const navigation = resolveDirectToolNavigation(model, toolName);
+      return {
+        kind: "tool" as NodeKind,
+        label: toolName,
+        description: navigation?.description ?? "direct tool",
+        tooltip: navigation?.tooltip ?? `${toolName} direct tool`,
+        filePath: navigation?.filePath,
+        line: navigation?.line,
+        iconId: "symbol-method",
+        status: "pass" as const,
+      };
+    });
 
-    const opChildren: TreeNode[] = [...model.openApiOperations].sort().map((op) => ({
-      kind: "tool" as NodeKind,
-      label: op,
-      description: "OpenAPI operation",
-      iconId: "cloud",
-      status: "pass" as const,
-    }));
+    const opChildren: TreeNode[] = [...model.openApiOperations].sort().map((operationName) => {
+      const navigation = resolveOpenApiOperationNavigation(model, operationName);
+      return {
+        kind: "tool" as NodeKind,
+        label: operationName,
+        description: navigation?.description ?? "OpenAPI operation",
+        tooltip: navigation?.tooltip ?? `${operationName} OpenAPI operation`,
+        filePath: navigation?.filePath,
+        line: navigation?.line,
+        iconId: "cloud",
+        status: "pass" as const,
+      };
+    });
 
     const total = model.directTools.size + model.openApiOperations.size;
     return {
@@ -361,6 +382,88 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
         ...(opChildren.length > 0 ? opChildren : [{ kind: "info" as NodeKind, label: "(no OpenAPI operations)", status: "none" as const }]),
       ],
     };
+  }
+
+  private buildAgentReferenceNodes(model: PackageModel, tools: string[], toolsetEntries: Array<Record<string, unknown>>): TreeNode[] {
+    const children: TreeNode[] = [];
+
+    if (tools.length > 0) {
+      const toolNodes = tools.map((toolName) => {
+        const navigation = resolveDirectToolNavigation(model, toolName);
+        const isBuiltin = toolName === "end_session";
+
+        return {
+          kind: "tool" as NodeKind,
+          label: toolName,
+          description: isBuiltin
+            ? "built-in tool"
+            : navigation?.description ?? "direct tool reference",
+          tooltip: isBuiltin
+            ? `${toolName} is a CES built-in tool`
+            : navigation?.tooltip ?? `${toolName} direct tool reference`,
+          filePath: navigation?.filePath,
+          line: navigation?.line,
+          iconId: isBuiltin ? "symbol-key" : "symbol-method",
+          status: "pass" as const,
+        };
+      });
+
+      children.push({
+        kind: "category",
+        label: `Tools (${toolNodes.length})`,
+        description: "click to open definitions",
+        iconId: "symbol-method",
+        status: "none",
+        children: toolNodes,
+      });
+    }
+
+    if (toolsetEntries.length > 0) {
+      const toolsetNodes = toolsetEntries.map((entry) => {
+        const toolsetName = typeof entry.toolset === "string" ? entry.toolset : "(unknown toolset)";
+        const toolIds = Array.isArray(entry.toolIds)
+          ? entry.toolIds.filter((toolId): toolId is string => typeof toolId === "string" && toolId.trim().length > 0)
+          : [];
+        const navigation = resolveToolsetNavigation(model, toolsetName);
+
+        const operationChildren = toolIds.map((operationName) => {
+          const operationNavigation = resolveOpenApiOperationNavigation(model, operationName);
+          return {
+            kind: "tool" as NodeKind,
+            label: operationName,
+            description: operationNavigation?.description ?? "OpenAPI operation",
+            tooltip: operationNavigation?.tooltip ?? `${operationName} OpenAPI operation`,
+            filePath: operationNavigation?.filePath,
+            line: operationNavigation?.line,
+            iconId: "cloud",
+            status: "pass" as const,
+          };
+        });
+
+        return {
+          kind: "toolset" as NodeKind,
+          label: toolsetName,
+          description: toolIds.length > 0 ? `${toolIds.length} operation${toolIds.length === 1 ? "" : "s"}` : "toolset reference",
+          tooltip: navigation?.tooltip ?? `${toolsetName} toolset reference`,
+          filePath: navigation?.filePath,
+          line: navigation?.line,
+          iconId: "tools",
+          status: "pass" as const,
+          children: operationChildren.length > 0 ? operationChildren : undefined,
+        };
+      });
+
+      children.push({
+        kind: "category",
+        label: `Toolsets (${toolsetNodes.length})`,
+        description: "click to inspect manifests and operations",
+        iconId: "tools",
+        status: "none",
+        children: toolsetNodes,
+      });
+    }
+
+    return children;
   }
 
   private buildEnvironmentNode(model: PackageModel, issues: ValidationIssue[]): TreeNode {
@@ -427,5 +530,9 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       case "pass": return new vscode.ThemeIcon("pass", new vscode.ThemeColor("testing.iconPassed"));
       default: return new vscode.ThemeIcon("circle-outline");
     }
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 }
