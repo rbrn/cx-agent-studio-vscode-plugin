@@ -2,7 +2,7 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
-## Unreleased
+## 0.9.1 — 2026-03-24
 
 ### Added
 
