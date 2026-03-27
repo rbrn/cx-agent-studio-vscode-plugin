@@ -33,7 +33,7 @@ export function loadInstructionRuleSet(): InstructionRuleSet {
     return cachedRuleSet;
   }
 
-  const rulePath = path.join(__dirname, "..", "..", "contracts", "instruction-contract-rules.json");
+  const rulePath = resolveInstructionRuleSetPath(__dirname);
   const raw = JSON.parse(fs.readFileSync(rulePath, "utf8")) as {
     version: number;
     contracts: Array<{
@@ -54,6 +54,24 @@ export function loadInstructionRuleSet(): InstructionRuleSet {
     })),
   };
   return cachedRuleSet;
+}
+
+export function resolveInstructionRuleSetPath(baseDir: string): string {
+  const candidates = [
+    path.resolve(baseDir, "..", "..", "contracts", "instruction-contract-rules.json"),
+    path.resolve(baseDir, "..", "contracts", "instruction-contract-rules.json"),
+    path.resolve(baseDir, "contracts", "instruction-contract-rules.json"),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Instruction contract file not found. Checked: ${candidates.join(", ")}`,
+  );
 }
 
 export function findMatchingInstructionRule(

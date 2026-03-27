@@ -2,6 +2,14 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.10.1 — 2026-03-27
+
+### Fixed
+
+- VSIX builds now resolve `contracts/instruction-contract-rules.json` correctly in bundled extension layout
+- CES Package Explorer load failures now surface the underlying runtime error message instead of only showing a generic failed-to-load state
+- Added regression coverage for both compiled and bundled instruction-contract path resolution
+
 ## 0.10.0 — 2026-03-27
 
 ### Added

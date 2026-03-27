@@ -101,13 +101,22 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
     try {
       model = buildPackageModel(rootPath);
       issues = runRules(model);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         kind: "package",
         label: path.basename(rootPath),
         description: "⚠️ failed to load",
         status: "error",
-        children: [],
+        tooltip: `${rootPath}\n${message}`,
+        children: [
+          {
+            kind: "info",
+            label: message,
+            description: "CES_VALIDATOR_RUNTIME_ERROR",
+            status: "error",
+          },
+        ],
       };
     }
 
