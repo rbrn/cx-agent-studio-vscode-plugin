@@ -9,7 +9,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { buildPackageModel } from "./packageIndex";
 import { runRules } from "./rules";
-import { resolveDirectToolNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "./toolNavigation";
+import { resolveDirectToolNavigation, resolveInstructionNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "./toolNavigation";
 import { PackageModel, ValidationIssue } from "./types";
 
 // ── Tree item types ─────────────────────────────────────────────────────────
@@ -36,6 +36,11 @@ interface TreeNode {
   children?: TreeNode[];
   status?: "pass" | "warn" | "error" | "none";
   iconId?: string;
+}
+
+interface ResourceOpenArgs {
+  filePath: string;
+  line?: number;
 }
 
 // ── Provider ────────────────────────────────────────────────────────────────
@@ -71,12 +76,9 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
 
     if (element.filePath) {
       item.command = {
-        command: "vscode.open",
+        command: "cesValidator.openResource",
         title: "Open File",
-        arguments: [
-          vscode.Uri.file(element.filePath),
-          element.line ? { selection: new vscode.Range(element.line - 1, 0, element.line - 1, 0) } as vscode.TextDocumentShowOptions : undefined,
-        ],
+        arguments: [{ filePath: element.filePath, line: element.line } satisfies ResourceOpenArgs],
       };
       item.resourceUri = vscode.Uri.file(element.filePath);
     }
@@ -155,6 +157,21 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       i.code.startsWith("CES_MANIFEST") || i.code === "CES_APP_JSON_ONLY" || i.code === "CES_ROOT_AGENT_MISSING" || i.code === "CES_GLOBAL_INSTRUCTION_MISSING",
     );
 
+    const globalInstructionTarget = resolveInstructionNavigation(model, "__global__");
+    const children = manifestIssues.map((i) => this.issueNode(i));
+    if (globalInstructionTarget) {
+      children.unshift({
+        kind: "instruction",
+        label: "global_instruction.txt",
+        description: globalInstructionTarget.description,
+        tooltip: globalInstructionTarget.tooltip,
+        filePath: globalInstructionTarget.filePath,
+        line: globalInstructionTarget.line,
+        status: "pass",
+        iconId: "file-text",
+      });
+    }
+
     const format = model.manifestFormat === "yaml" ? "app.yaml" : model.manifestFormat === "json" ? "app.json" : "missing";
     return {
       kind: "file",
@@ -163,7 +180,7 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       status: this.statusFromIssues(manifestIssues),
       description: this.statusBadge(manifestIssues),
       iconId: "file",
-      children: manifestIssues.map((i) => this.issueNode(i)),
+      children,
     };
   }
 
@@ -191,6 +208,7 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       const instrInfo = model.instructionInfos.find((info) => info.agentName === agent.name);
       const instrChildren: TreeNode[] = [];
       if (instrInfo) {
+        const instrTarget = resolveInstructionNavigation(model, agent.name);
         const instrIssues = issues.filter((i) =>
           i.file === instrInfo.filePath && i.code.startsWith("CES_INSTRUCTION"),
         );
@@ -226,11 +244,23 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
           kind: "instruction",
           label: "instruction.txt",
           description: `${this.statusBadge(instrIssues)}  §${instrInfo.sections.length} refs:${refCount}`,
-          filePath: instrInfo.filePath,
+          tooltip: instrTarget?.tooltip,
+          filePath: instrTarget?.filePath ?? instrInfo.filePath,
+          line: instrTarget?.line ?? 1,
           status: this.statusFromIssues(instrIssues),
           iconId: "file-text",
-          children: instrDetailNodes,
         });
+
+        if (instrDetailNodes.length > 0) {
+          instrChildren.push({
+            kind: "category",
+            label: "Instruction details",
+            description: `${instrInfo.sections.length} section${instrInfo.sections.length === 1 ? "" : "s"}`,
+            status: this.statusFromIssues(instrIssues),
+            iconId: "list-unordered",
+            children: instrDetailNodes,
+          });
+        }
       }
 
       const referenceChildren = this.buildAgentReferenceNodes(model, tools, toolsetEntries);

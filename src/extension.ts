@@ -66,6 +66,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.openResource", async (target: { filePath?: string; line?: number } | undefined) => {
+        if (!target?.filePath) {
+          return;
+        }
+
+        try {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.filePath));
+          await vscode.window.showTextDocument(document, {
+            preview: false,
+            selection: typeof target.line === "number"
+              ? new vscode.Range(target.line - 1, 0, target.line - 1, 0)
+              : undefined,
+          });
+        } catch (err) {
+          outputChannel.appendLine(`[CES] openResource error: ${err}`);
+        }
+      }),
+    );
+
+    context.subscriptions.push(
       vscode.commands.registerCommand("cesValidator.refreshTree", async () => {
         try {
           await orchestrator.validateAllPackages();

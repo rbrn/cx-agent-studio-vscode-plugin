@@ -15,6 +15,21 @@ export interface ToolNavigationTarget {
   tooltip: string;
 }
 
+export function resolveInstructionNavigation(model: PackageModel, agentName: string): ToolNavigationTarget | null {
+  const instructionInfo = model.instructionInfos.find((info) => info.agentName === agentName);
+  if (!instructionInfo) {
+    return null;
+  }
+
+  const relativePath = path.relative(model.rootPath, instructionInfo.filePath);
+  return {
+    filePath: instructionInfo.filePath,
+    line: 1,
+    description: agentName === "__global__" ? "global instruction" : "agent instruction",
+    tooltip: `${agentName === "__global__" ? "global instruction" : `${agentName} instruction`} → ${relativePath}`,
+  };
+}
+
 export function resolveDirectToolNavigation(model: PackageModel, toolName: string): ToolNavigationTarget | null {
   const toolInfo = model.pythonToolInfos.find((info) => info.name === toolName);
   if (!toolInfo) {

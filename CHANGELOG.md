@@ -2,6 +2,19 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.10.2 — 2026-03-27
+
+### Added
+
+- Direct tree-item navigation command that opens represented CES resources in VS Code
+- Clickable navigation for agent `instruction.txt` nodes and global instruction nodes
+- Regression coverage for instruction navigation targets
+
+### Changed
+
+- Agent instruction rows now act as direct openable resources, with structural metadata moved under a separate details node
+- Subagent tool and other file-backed tree nodes now use the extension's dedicated open-resource command for more reliable editor navigation
+
 ## 0.10.1 — 2026-03-27
 
 ### Fixed

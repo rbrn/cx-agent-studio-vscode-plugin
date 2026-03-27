@@ -6,7 +6,7 @@
 import { strict as assert } from "assert";
 import test from "node:test";
 import { buildPackageModel } from "../core/packageIndex";
-import { resolveDirectToolNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "../core/toolNavigation";
+import { resolveDirectToolNavigation, resolveInstructionNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "../core/toolNavigation";
 import { cleanupFixture, createFixture } from "./helpers";
 
 function baseToolNavigationFixture(): Record<string, string> {
@@ -85,6 +85,36 @@ test("resolveDirectToolNavigation points Python tools to python_code.py", () => 
     assert.equal(target?.filePath.endsWith("tools/customer_lookup/python_code.py"), true);
     assert.equal(target?.line, 3);
     assert.equal(target?.description, "python tool");
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("resolveInstructionNavigation points agent instructions to instruction.txt", () => {
+  const rootPath = createFixture(baseToolNavigationFixture());
+
+  try {
+    const model = buildPackageModel(rootPath);
+    const target = resolveInstructionNavigation(model, "voice_banking_agent");
+    assert.ok(target);
+    assert.equal(target?.filePath.endsWith("agents/voice_banking_agent/instruction.txt"), true);
+    assert.equal(target?.line, 1);
+    assert.equal(target?.description, "agent instruction");
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("resolveInstructionNavigation points global instructions to global_instruction.txt", () => {
+  const rootPath = createFixture(baseToolNavigationFixture());
+
+  try {
+    const model = buildPackageModel(rootPath);
+    const target = resolveInstructionNavigation(model, "__global__");
+    assert.ok(target);
+    assert.equal(target?.filePath.endsWith("global_instruction.txt"), true);
+    assert.equal(target?.line, 1);
+    assert.equal(target?.description, "global instruction");
   } finally {
     cleanupFixture(rootPath);
   }
