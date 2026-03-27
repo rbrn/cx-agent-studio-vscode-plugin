@@ -80,6 +80,7 @@ export interface InstructionInfo {
   sections: InstructionSection[];
   references: InstructionReference[];
   toolCalls: InstructionToolCall[];
+  exampleCount: number;
   parseError?: string;
 }
 

@@ -24,6 +24,38 @@ function hasCode(issues: ValidationIssue[], code: string): boolean {
   return issues.some((issue) => issue.code === code);
 }
 
+function fullGlobalInstructionFixture(): string {
+  return [
+    "<persona>",
+    "Global banking persona.",
+    "</persona>",
+    "<constraints>",
+    "1. Be concise.",
+    "</constraints>",
+  ].join("\n");
+}
+
+function fullAgentInstructionFixture(): string {
+  return [
+    "<role>",
+    "    You are the agent.",
+    "</role>",
+    "<persona>",
+    "    Helpful and concise.",
+    "</persona>",
+    "<constraints>",
+    "    1. Stay in scope.",
+    "</constraints>",
+    "<taskflow>",
+    "    <subtask name=\"Main\">",
+    "        <step name=\"Help\">",
+    "            <action>Help the caller.</action>",
+    "        </step>",
+    "    </subtask>",
+    "</taskflow>",
+  ].join("\n");
+}
+
 function baseValidFixture(): Record<string, string> {
   return {
     "app.yaml": [
@@ -33,7 +65,7 @@ function baseValidFixture(): Record<string, string> {
       "guardrails: []",
       "",
     ].join("\n"),
-    "global_instruction.txt": "Global instruction text for package.",
+    "global_instruction.txt": fullGlobalInstructionFixture(),
     "agents/voice_banking_agent/voice_banking_agent.json": JSON.stringify(
       {
         displayName: "voice_banking_agent",
@@ -43,20 +75,21 @@ function baseValidFixture(): Record<string, string> {
       null,
       2,
     ),
-    "agents/voice_banking_agent/instruction.txt": "<role>\nRoot agent instruction\n</role>",
+    "agents/voice_banking_agent/instruction.txt": fullAgentInstructionFixture(),
     "agents/location_services_agent/location_services_agent.json": JSON.stringify(
       {
         displayName: "location_services_agent",
         instruction: "agents/location_services_agent/instruction.txt",
-        toolsets: [{ toolset: "location" }],
+        toolsets: [{ toolset: "location", toolIds: ["searchBranches", "getBranch"] }],
       },
       null,
       2,
     ),
-    "agents/location_services_agent/instruction.txt": "<role>\nChild agent instruction\n</role>",
+    "agents/location_services_agent/instruction.txt": fullAgentInstructionFixture(),
     "toolsets/location/location.json": JSON.stringify(
       {
         displayName: "location",
+        toolIds: ["searchBranches", "getBranch"],
         openApiToolset: {
           openApiSchema: "toolsets/location/open_api_toolset/open_api_schema.yaml",
         },
@@ -675,6 +708,86 @@ test("instruction with single-line sections parses correctly", () => {
   assert.equal(hasCode(issues, "CES_INSTRUCTION_PARSE_ERROR"), false);
 });
 
+test("global instruction that violates the shared section contract is reported", () => {
+  const files = baseValidFixture();
+  files["global_instruction.txt"] = [
+    "<persona>",
+    "Global banking persona.",
+    "</persona>",
+    "<constraints>",
+    "1. Be concise.",
+    "</constraints>",
+    "<taskflow>",
+    "<subtask name=\"Bad\">",
+    "<step name=\"Bad\">",
+    "<action>Should not exist.</action>",
+    "</step>",
+    "</subtask>",
+    "</taskflow>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_UNEXPECTED_SECTION"), true);
+});
+
+test("instruction with empty examples section is reported", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/instruction.txt"] = [
+    "<role>",
+    "You are the location agent.",
+    "</role>",
+    "<persona>",
+    "Helpful and concise.",
+    "</persona>",
+    "<constraints>",
+    "1. Stay in scope.",
+    "</constraints>",
+    "<taskflow>",
+    "<subtask name=\"Search\">",
+    "<step name=\"Search\">",
+    "<action>Search for branches.</action>",
+    "</step>",
+    "</subtask>",
+    "</taskflow>",
+    "<examples>",
+    "</examples>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_EXAMPLES_EMPTY"), true);
+});
+
+test("instruction with tool_call referencing undeclared attached operation produces error", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/instruction.txt"] = [
+    "<role>",
+    "    You are the location agent.",
+    "</role>",
+    "<persona>",
+    "    Helpful and concise.",
+    "</persona>",
+    "<constraints>",
+    "    1. Stay in scope.",
+    "</constraints>",
+    "<taskflow>",
+    "    <subtask name=\"Search\">",
+    "        <step name=\"Search\">",
+    "            <action>Search for branches.</action>",
+    "        </step>",
+    "    </subtask>",
+    "</taskflow>",
+    "<examples>",
+    "    <example>",
+    "        <user>Find branches</user>",
+    "        <tool_call>location.lookupByCoordinates(lat=\"1\", lng=\"2\")</tool_call>",
+    "    </example>",
+    "</examples>",
+  ].join("\n");
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_INSTRUCTION_TOOLCALL_UNKNOWN_OPERATION"), true);
+});
+
 test("instruction model is populated on PackageModel", () => {
   const files = baseValidFixture();
   files["agents/voice_banking_agent/instruction.txt"] = [
@@ -702,6 +815,7 @@ test("instruction model is populated on PackageModel", () => {
     assert.equal(vba.sections.length, 3); // role, constraints, examples
     assert.equal(vba.references.length, 2); // 1 agent + 1 tool
     assert.equal(vba.toolCalls.length, 1); // location.searchBranches
+    assert.equal(vba.exampleCount, 1);
     assert.equal(vba.toolCalls[0].operation, "location.searchBranches");
   } finally {
     cleanupFixture(rootPath);

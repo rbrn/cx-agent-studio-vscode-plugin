@@ -3,7 +3,7 @@
 Real-time validation, packaging, remote import/push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.9.1-green)
+![Version](https://img.shields.io/badge/version-0.10.0-green)
 
 ---
 
@@ -14,13 +14,13 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.9.1.vsix
+code --install-extension releases/ces-package-validator-0.10.0.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
 > ```bash
 > "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
->   --install-extension releases/ces-package-validator-0.9.1.vsix
+>   --install-extension releases/ces-package-validator-0.10.0.vsix
 > ```
 
 ### Option B — VS Code UI
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.9.1.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.9.1.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.10.0.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -144,7 +144,7 @@ npm run bundle         # esbuild bundle only
 ### Test
 
 ```bash
-npm test               # Runs all 80 tests
+npm test               # Runs all 83 tests
 ```
 
 ### Package a new VSIX
@@ -185,7 +185,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.9.1.vsix # Pre-built extension
+│   └── ces-package-validator-0.10.0.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -213,6 +213,15 @@ ces-validate /path/to/agent-package
 ## 📋 Changelog
 
 The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
+
+### 0.10.0 (2026-03-27)
+
+**Shared instruction contracts and stricter prompt validation:**
+
+- Added shared declarative instruction contracts in `contracts/instruction-contract-rules.json`
+- CES instruction files now validate required sections, allowed section order, and non-empty `<examples>` blocks
+- Tool references and `tool_call(...)` examples are now checked against the owning agent's declared direct tools and attached toolset operations
+- Added regression tests for the new instruction-contract parsing and validation flow
 
 ### 0.9.1 (2026-03-24)
 

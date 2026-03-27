@@ -23,7 +23,7 @@ This document is the single source of truth for every validation check performed
 | 9 | [Python function tools](#9-python-function-tools) | ✅ 7b | 4 codes | 4 |
 | 10 | [Google Search tools](#10-google-search-tools) | ✅ 7b | 4 codes | 4 |
 | 11 | [Evaluations](#11-evaluations) | ✅ 9 | 7 codes | 7 |
-| 12 | [Instructions](#12-instruction-files) | — | 6 codes | 6 |
+| 12 | [Instructions](#12-instruction-files) | ✅ 5b | 11 codes | 11 |
 | 13 | [Environment](#13-environment) | ✅ 13 | 8 codes | 8 |
 | 14 | [$env_var placeholders](#14-env_var-placeholders) | ✅ 14 | 1 code | 1 |
 | 15 | [Nesting depth](#15-nesting-depth) | — | 3 codes | 3 |
@@ -179,16 +179,21 @@ Validates evaluation manifests under `evaluations/`, including golden and scenar
 
 ## 12. Instruction Files
 
-Validates CES instruction files (`instruction.txt`, `global_instruction.txt`) for structural correctness. **Plugin-only** — the Python script does not parse instruction file internals.
+Validates CES instruction files (`instruction.txt`, `global_instruction.txt`) against the shared declarative contract in `ces-plugin/contracts/instruction-contract-rules.json`. The Python script and plugin now use the same rule set.
 
 | Diagnostic Code | Severity | Description | Python |
 |-----------------|----------|-------------|:------:|
-| `CES_INSTRUCTION_PARSE_ERROR` | error | Instruction file has unclosed XML sections | — |
-| `CES_INSTRUCTION_MISSING_SECTION` | warning | Missing required `<role>` section | — |
-| `CES_INSTRUCTION_AGENT_REF_UNKNOWN` | error | `{@AGENT:name}` references unknown agent | — |
-| `CES_INSTRUCTION_TOOL_REF_UNKNOWN` | warning | `{@TOOL:name}` references unknown tool | — |
-| `CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET` | warning | `tool_call("toolset.op")` references unknown toolset | — |
-| `CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOL` | warning | `tool_call("tool")` references unknown direct tool | — |
+| `CES_INSTRUCTION_PARSE_ERROR` | error | Instruction file has unclosed XML sections | ✅ 5b |
+| `CES_INSTRUCTION_CONTRACT_MISSING` | warning | No shared instruction contract matched the file path | ✅ 5b |
+| `CES_INSTRUCTION_MISSING_SECTION` | error | Contract-required top-level section is missing | ✅ 5b |
+| `CES_INSTRUCTION_UNEXPECTED_SECTION` | error | Top-level section is present but not allowed by the matched contract | ✅ 5b |
+| `CES_INSTRUCTION_SECTION_ORDER_INVALID` | error | Top-level sections are present but out of contract order | ✅ 5b |
+| `CES_INSTRUCTION_EXAMPLES_EMPTY` | error | `<examples>` section exists but contains no `<example>` blocks | ✅ 5b |
+| `CES_INSTRUCTION_AGENT_REF_UNKNOWN` | error | `{@AGENT:name}` references unknown agent | ✅ 5b |
+| `CES_INSTRUCTION_TOOL_REF_UNKNOWN` | error | `{@TOOL:name}` references a direct tool not declared by the owning agent | ✅ 5b |
+| `CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET` | error | `tool_call("toolset.op")` references a toolset not attached to the owning agent | ✅ 5b |
+| `CES_INSTRUCTION_TOOLCALL_UNKNOWN_OPERATION` | error | `tool_call("toolset.op")` references an undeclared operation within an attached toolset | ✅ 5b |
+| `CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOL` | error | `tool_call("tool")` references an unknown direct tool | ✅ 5b |
 
 ---
 

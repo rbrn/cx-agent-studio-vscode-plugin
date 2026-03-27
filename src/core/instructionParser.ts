@@ -12,6 +12,7 @@ export const REQUIRED_SECTIONS = ["role"] as const;
 
 const SECTION_OPEN_RE = /^<(role|persona|constraints|taskflow|examples)>/i;
 const SECTION_CLOSE_RE = /<\/(role|persona|constraints|taskflow|examples)>/i;
+const EXAMPLE_OPEN_RE = /^<example>/i;
 const AGENT_REF_RE = /\{@AGENT:\s*([^}]+)\}/g;
 const TOOL_REF_RE = /\{@TOOL:\s*([^}]+)\}/g;
 const TOOL_CALL_RE = /([a-zA-Z_][a-zA-Z0-9_.]*)\(([^)]*)\)/g;
@@ -30,6 +31,7 @@ export function parseInstructionFile(filePath: string, agentName: string): Instr
       sections: [],
       references: [],
       toolCalls: [],
+      exampleCount: 0,
       parseError: error instanceof Error ? error.message : "Failed to read instruction file",
     };
   }
@@ -38,6 +40,7 @@ export function parseInstructionFile(filePath: string, agentName: string): Instr
   const sections: InstructionSection[] = [];
   const references: InstructionReference[] = [];
   const toolCalls: InstructionToolCall[] = [];
+  let exampleCount = 0;
   const openSections: Array<{ name: string; startLine: number }> = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -45,6 +48,10 @@ export function parseInstructionFile(filePath: string, agentName: string): Instr
     if (line === undefined) continue;
     const trimmed = line.trim();
     const lineNumber = i + 1;
+
+    if (EXAMPLE_OPEN_RE.exec(trimmed)) {
+      exampleCount += 1;
+    }
 
     // Check for section opening tags
     const openMatch = SECTION_OPEN_RE.exec(trimmed);
@@ -115,6 +122,7 @@ export function parseInstructionFile(filePath: string, agentName: string): Instr
     sections,
     references,
     toolCalls,
+    exampleCount,
     parseError,
   };
 }

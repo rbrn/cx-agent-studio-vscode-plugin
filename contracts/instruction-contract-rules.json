@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "contracts": [
+    {
+      "id": "global_instruction",
+      "pathPatterns": ["global_instruction.txt"],
+      "allowedSectionOrders": [
+        ["persona", "constraints"]
+      ],
+      "requireNonEmptyExamples": false
+    },
+    {
+      "id": "agent_instruction",
+      "pathPatterns": ["agents/*/instruction.txt"],
+      "allowedSectionOrders": [
+        ["role", "persona", "constraints", "taskflow"],
+        ["role", "persona", "constraints", "taskflow", "examples"]
+      ],
+      "requireNonEmptyExamples": true
+    }
+  ]
+}

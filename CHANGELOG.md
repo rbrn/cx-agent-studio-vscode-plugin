@@ -2,6 +2,20 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.10.0 — 2026-03-27
+
+### Added
+
+- Shared declarative instruction contract rules in `contracts/instruction-contract-rules.json`
+- Instruction validation for contract matching, missing sections, unexpected sections, section ordering, and empty `<examples>` blocks
+- Agent-aware validation for direct-tool references and attached toolset operation references used in instruction examples
+- Regression coverage for shared instruction-contract parsing and validation behavior
+
+### Changed
+
+- The extension now validates CES instruction files against the same contract model used by the Python package validator
+- Instruction reference diagnostics are now scoped to each owning agent inventory instead of the package-wide tool inventory
+
 ## 0.9.1 — 2026-03-24
 
 ### Added

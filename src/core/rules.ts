@@ -6,9 +6,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
+import { validateInstructionStructure } from "./instructionContracts";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
 import { AgentInfo, PackageModel, PythonToolInfo, ValidationIssue, ValidationSeverity } from "./types";
-import { REQUIRED_SECTIONS } from "./instructionParser";
 
 const ROOT_DEPTH_LIMIT = 2;
 const TOOLSET_DEPTH_LIMIT = 3;
@@ -1146,13 +1146,9 @@ function validateInstructions(model: PackageModel, issues: ValidationIssue[]): v
   }
 
   const agentNames = new Set(model.agentInfos.map((a) => a.name));
+  const agentInventories = new Map(model.agentInfos.map((agentInfo) => [agentInfo.name, getInstructionInventory(agentInfo)]));
 
   for (const info of model.instructionInfos) {
-    // Skip global instruction from structural checks
-    if (info.agentName === "__global__") {
-      continue;
-    }
-
     if (info.parseError) {
       pushIssue(
         issues,
@@ -1162,21 +1158,19 @@ function validateInstructions(model: PackageModel, issues: ValidationIssue[]): v
         info.filePath,
         1,
       );
+      continue;
     }
 
-    // Check required sections
-    const sectionNames = new Set(info.sections.map((s) => s.name));
-    for (const required of REQUIRED_SECTIONS) {
-      if (!sectionNames.has(required)) {
-        pushIssue(
-          issues,
-          "CES_INSTRUCTION_MISSING_SECTION",
-          `Instruction for '${info.agentName}' is missing required <${required}> section`,
-          "warning",
-          info.filePath,
-          1,
-        );
-      }
+    const relativePath = toRelativePath(model.rootPath, info.filePath);
+    for (const finding of validateInstructionStructure(info, relativePath)) {
+      pushIssue(
+        issues,
+        finding.code,
+        finding.message,
+        finding.severity,
+        info.filePath,
+        finding.line ?? 1,
+      );
     }
 
     // Validate {@AGENT: name} references resolve to known agents
@@ -1193,14 +1187,19 @@ function validateInstructions(model: PackageModel, issues: ValidationIssue[]): v
       }
     }
 
+    const inventory = agentInventories.get(info.agentName);
+    if (!inventory) {
+      continue;
+    }
+
     // Validate {@TOOL: name} references resolve to known direct tools
     for (const ref of info.references) {
-      if (ref.type === "tool" && model.directTools.size > 0 && !model.directTools.has(ref.name)) {
+      if (ref.type === "tool" && !inventory.directTools.has(ref.name)) {
         pushIssue(
           issues,
           "CES_INSTRUCTION_TOOL_REF_UNKNOWN",
           `Instruction for '${info.agentName}' references unknown tool '${ref.name}' at line ${ref.line}`,
-          "warning",
+          "error",
           info.filePath,
           ref.line,
         );
@@ -1213,31 +1212,85 @@ function validateInstructions(model: PackageModel, issues: ValidationIssue[]): v
       const toolsetName = parts.length > 1 ? parts[0] : null;
       const opName = parts.length > 1 ? parts[1] : parts[0];
 
-      // Check if toolset prefix matches a known toolset
       if (toolsetName) {
-        const toolsetNames = new Set(model.toolsetInfos.map((t) => t.name));
-        if (!toolsetNames.has(toolsetName)) {
+        if (!inventory.toolsetNames.has(toolsetName)) {
           pushIssue(
             issues,
             "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOLSET",
             `Instruction for '${info.agentName}': tool_call '${call.operation}' references unknown toolset '${toolsetName}' at line ${call.line}`,
-            "warning",
+            "error",
+            info.filePath,
+            call.line,
+          );
+        } else if (!inventory.toolsetOperations.has(call.operation)) {
+          pushIssue(
+            issues,
+            "CES_INSTRUCTION_TOOLCALL_UNKNOWN_OPERATION",
+            `Instruction for '${info.agentName}': tool_call '${call.operation}' is not declared in the agent's attached toolsets at line ${call.line}`,
+            "error",
             info.filePath,
             call.line,
           );
         }
-      } else if (opName && model.directTools.size > 0 && !model.directTools.has(opName)) {
+      } else if (opName && !inventory.directTools.has(opName)) {
         pushIssue(
           issues,
           "CES_INSTRUCTION_TOOLCALL_UNKNOWN_TOOL",
           `Instruction for '${info.agentName}': tool_call '${call.operation}' is not a known direct tool at line ${call.line}`,
-          "warning",
+          "error",
           info.filePath,
           call.line,
         );
       }
     }
   }
+}
+
+function getInstructionInventory(agentInfo: AgentInfo): {
+  directTools: Set<string>;
+  toolsetNames: Set<string>;
+  toolsetOperations: Set<string>;
+} | null {
+  if (!isRecord(agentInfo.manifestData)) {
+    return null;
+  }
+
+  const directTools = new Set<string>();
+  const tools = agentInfo.manifestData.tools;
+  if (Array.isArray(tools)) {
+    for (const tool of tools) {
+      if (typeof tool === "string" && tool.trim().length > 0) {
+        directTools.add(tool);
+      }
+    }
+  }
+
+  const toolsetNames = new Set<string>();
+  const toolsetOperations = new Set<string>();
+  const toolsets = agentInfo.manifestData.toolsets;
+  if (Array.isArray(toolsets)) {
+    for (const entry of toolsets) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const toolsetName = typeof entry.toolset === "string" ? entry.toolset.trim() : "";
+      if (!toolsetName) {
+        continue;
+      }
+      toolsetNames.add(toolsetName);
+
+      const toolIds = entry.toolIds;
+      if (Array.isArray(toolIds)) {
+        for (const toolId of toolIds) {
+          if (typeof toolId === "string" && toolId.trim().length > 0) {
+            toolsetOperations.add(`${toolsetName}.${toolId}`);
+          }
+        }
+      }
+    }
+  }
+
+  return { directTools, toolsetNames, toolsetOperations };
 }
 
 function resolveGuardrailManifestPath(rootPath: string, displayName: string): string | null {
