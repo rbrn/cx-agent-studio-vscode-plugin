@@ -7,7 +7,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { loadDeploymentStatusSummary } from "./incrementalDeployment";
+import { DeploymentPlanStatus, DeploymentRunComponentEntry, DeploymentStatusSummary, loadDeploymentStatusSummary } from "./incrementalDeployment";
 import { buildPackageModel } from "./packageIndex";
 import { runRules } from "./rules";
 import { resolveDirectToolNavigation, resolveInstructionNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "./toolNavigation";
@@ -37,6 +37,7 @@ interface TreeNode {
   children?: TreeNode[];
   status?: "pass" | "warn" | "error" | "none";
   iconId?: string;
+  iconColorId?: string;
 }
 
 interface ResourceOpenArgs {
@@ -574,10 +575,14 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       });
     }
 
+    if (summary.latestPlan) {
+      children.push(this.buildDeploymentPlanNode(summary));
+    }
+
     if (summary.components.length > 0) {
       children.push({
         kind: "category",
-        label: `Resources (${summary.components.length})`,
+        label: `Tracked resources (${summary.components.length})`,
         description: `${summary.project ?? "-"}/${summary.location ?? "-"}/apps/${summary.appId ?? "-"}`,
         status,
         iconId: "cloud-upload",
@@ -600,6 +605,74 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       status,
       iconId: "cloud-upload",
       children,
+    };
+  }
+
+  private buildDeploymentPlanNode(summary: DeploymentStatusSummary): TreeNode {
+    const latestPlan = summary.latestPlan;
+    if (!latestPlan) {
+      return {
+        kind: "category",
+        label: "Latest plan",
+        description: "none",
+        status: "none",
+        iconId: "history",
+        children: [],
+      };
+    }
+
+    const planGroups: Array<{ status: DeploymentPlanStatus; label: string }> = [
+      { status: "added", label: "Added" },
+      { status: "modified", label: "Updated" },
+      { status: "noop", label: "No-op" },
+      { status: "removed", label: "Removed" },
+    ];
+
+    return {
+      kind: "category",
+      label: "Latest plan",
+      description: `+${latestPlan.summary.added} ~${latestPlan.summary.modified} =${latestPlan.summary.noop} -${latestPlan.summary.removed}`,
+      status: this.statusFromDeploymentPlanSummary(latestPlan.summary),
+      iconId: "history",
+      children: planGroups.map(({ status, label }) => {
+        const components = latestPlan.components.filter((component) => component.plan_status === status);
+        return {
+          kind: "category",
+          label: `${label} (${components.length})`,
+          description: this.planGroupDescription(status, components.length),
+          status: this.statusFromPlanStatus(status),
+          iconId: this.iconIdForPlanStatus(status),
+          iconColorId: this.iconColorIdForPlanStatus(status),
+          children: components.length > 0
+            ? components.map((component) => this.deploymentPlanComponentNode(component))
+            : [{ kind: "info", label: "none", status: "none" }],
+        } satisfies TreeNode;
+      }),
+    };
+  }
+
+  private deploymentPlanComponentNode(component: DeploymentRunComponentEntry): TreeNode {
+    const kind = component.kind ?? "tool";
+    const resourceKind = component.kind === "agent" ? "agent" : component.kind === "toolset" ? "toolset" : "tool";
+    const resourceId = component.resource_id ?? component.key;
+    const remoteName = component.after_resource_name ?? component.before_resource_name ?? "-";
+
+    return {
+      kind: resourceKind,
+      label: resourceId,
+      description: this.planComponentDescription(component),
+      tooltip: [
+        `${this.planStatusLabel(component.plan_status)} · ${kind}`,
+        `displayName=${component.display_name ?? "-"}`,
+        `resource=${remoteName}`,
+        component.error ? `error=${component.error}` : undefined,
+      ].filter((value): value is string => Boolean(value)).join("\n"),
+      filePath: component.plan_status === "removed"
+        ? undefined
+        : (component.source_path ?? undefined),
+      status: this.statusFromPlanStatus(component.plan_status),
+      iconId: this.iconIdForPlanStatus(component.plan_status),
+      iconColorId: this.iconColorIdForPlanStatus(component.plan_status),
     };
   }
 
@@ -646,9 +719,100 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
     }
   }
 
+  private statusFromDeploymentPlanSummary(summary: { added: number; modified: number; noop: number; removed: number }): "pass" | "warn" | "error" | "none" {
+    if (summary.removed > 0) {
+      return "error";
+    }
+    if (summary.added > 0 || summary.modified > 0) {
+      return "warn";
+    }
+    if (summary.noop > 0) {
+      return "pass";
+    }
+    return "none";
+  }
+
+  private statusFromPlanStatus(status: DeploymentPlanStatus): "pass" | "warn" | "error" | "none" {
+    switch (status) {
+      case "added":
+        return "pass";
+      case "modified":
+        return "warn";
+      case "removed":
+        return "error";
+      case "noop":
+      default:
+        return "none";
+    }
+  }
+
+  private planStatusLabel(status: DeploymentPlanStatus): string {
+    switch (status) {
+      case "added":
+        return "Added";
+      case "modified":
+        return "Updated";
+      case "removed":
+        return "Removed";
+      case "noop":
+      default:
+        return "No-op";
+    }
+  }
+
+  private planGroupDescription(status: DeploymentPlanStatus, count: number): string {
+    if (count === 0) {
+      return "none";
+    }
+    if (status === "removed") {
+      return "state only; no remote delete";
+    }
+    return `${count} resource change${count === 1 ? "" : "s"}`;
+  }
+
+  private planComponentDescription(component: DeploymentRunComponentEntry): string {
+    const kind = component.kind ?? "resource";
+    const displayName = component.display_name ?? component.resource_id ?? component.key;
+    if (component.plan_status === "removed") {
+      return `${kind} · ${displayName} · state only`;
+    }
+    return `${kind} · ${displayName}`;
+  }
+
+  private iconIdForPlanStatus(status: DeploymentPlanStatus): string {
+    switch (status) {
+      case "added":
+        return "diff-added";
+      case "modified":
+        return "diff-modified";
+      case "removed":
+        return "diff-removed";
+      case "noop":
+      default:
+        return "circle-outline";
+    }
+  }
+
+  private iconColorIdForPlanStatus(status: DeploymentPlanStatus): string | undefined {
+    switch (status) {
+      case "added":
+        return "testing.iconPassed";
+      case "modified":
+        return "editorWarning.foreground";
+      case "removed":
+        return "errorForeground";
+      case "noop":
+      default:
+        return "descriptionForeground";
+    }
+  }
+
   private resolveIcon(node: TreeNode): vscode.ThemeIcon | undefined {
     if (node.iconId) {
-      return new vscode.ThemeIcon(node.iconId);
+      return new vscode.ThemeIcon(
+        node.iconId,
+        node.iconColorId ? new vscode.ThemeColor(node.iconColorId) : undefined,
+      );
     }
 
     switch (node.status) {

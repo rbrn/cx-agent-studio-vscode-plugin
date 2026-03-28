@@ -215,6 +215,10 @@ export interface DeploymentStatusSummary {
     gitCommitSha: string | null;
     message: string | null;
   } | null;
+  latestPlan: {
+    summary: DeploymentPlanSummary;
+    components: DeploymentRunComponentEntry[];
+  } | null;
   components: Array<{
     key: string;
     kind: DeployableComponentKind;
@@ -418,6 +422,12 @@ export function loadDeploymentStatusSummary(rootPath: string): DeploymentStatusS
           completedAt: latestArtifact.completed_at,
           gitCommitSha: latestArtifact.git.commit_sha,
           message: latestArtifact.outcome.message,
+        }
+      : null,
+    latestPlan: latestArtifact
+      ? {
+          summary: latestArtifact.plan.summary,
+          components: latestArtifact.plan.components,
         }
       : null,
     components,

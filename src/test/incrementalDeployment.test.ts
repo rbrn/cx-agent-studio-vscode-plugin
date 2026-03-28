@@ -197,6 +197,14 @@ test("prepareIncrementalDeployment classifies modified, noop, and removed compon
     const status = loadDeploymentStatusSummary(rootPath);
     assert.equal(status.latestRun?.status, "cancelled");
     assert.equal(status.latestRun?.message, "User cancelled deployment.");
+    assert.equal(status.latestPlan?.summary.modified, 1);
+    assert.equal(status.latestPlan?.summary.removed, 1);
+    assert.deepEqual(status.latestPlan?.components.map((component) => component.plan_status), [
+      "noop",
+      "noop",
+      "modified",
+      "removed",
+    ]);
     assert.equal(status.components.length, 4);
   } finally {
     cleanupFixture(rootPath);
