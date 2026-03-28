@@ -1,6 +1,6 @@
 # CES Package Validator — VS Code Extension
 
-Real-time validation, packaging, remote import/push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
+Real-time validation, packaging, full-app import, incremental resource push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
 ![Version](https://img.shields.io/badge/version-0.10.2-green)
@@ -66,17 +66,19 @@ The extension automatically detects CES Agent Studio package roots (folders cont
 
 ### Package, import, and push workflows
 
-The extension can now package the currently selected CES package, validate that the generated ZIP still contains every required referenced runtime file, and optionally upload it to CES.
+The extension can now package the currently selected CES package, validate that the generated ZIP still contains every required referenced runtime file, and deploy to CES in two ways: full ZIP import or incremental resource push.
 
 What the deploy commands do:
 
 - run the same package validation rules as the sidebar/Problems panel
 - create a versioned ZIP beside the package root plus a `latest` ZIP copy
 - validate the finished archive contents before upload
-- import a new CES app or push updates to an existing remote app via `apps:importApp`
+- import a new CES app or re-import an existing one via `apps:importApp`
+- build incremental plans for `toolsets/`, `tools/`, and `agents/`, with local hash-based state under `.ces-validator/`
+- write per-run JSON artifacts under `.ces-validator/artifacts/` and surface them in the Package Explorer
 - reuse your last-used project/location/app ID values per package root
 
-> **Requirements for import/push:** the extension shell environment must have `zip`, `unzip`, and `gcloud` available.
+> **Requirements:** ZIP packaging/import needs `zip`, `unzip`, and `gcloud`. Incremental push needs `gcloud` and currently applies create/patch operations for toolsets, tools, and agents (it does not delete remote resources).
 
 ### Clickable tool navigation
 
@@ -112,7 +114,8 @@ A dedicated **CES Package** sidebar shows the full package structure:
 | `CES Validator: Validate Current Package` | Run validation on the package containing the active file |
 | `CES Validator: Package Current Package` | Validate and create a deployable ZIP archive for the current CES package |
 | `CES Validator: Import Current Package to CES` | Package the current CES package and import it as a new or existing CES app |
-| `CES Validator: Push Current Package to Remote CES App` | Package the current CES package and push it to an existing remote CES app |
+| `CES Validator: Push Current Package Incrementally to CES` | Validate the current CES package, show a resource-level plan, and create/patch changed toolsets, tools, and agents |
+| `CES Validator: Show Current Package Deployment Status` | Open the latest local deployment state and artifact summary for the current CES package |
 | `CES Validator: Clear Diagnostics` | Clear all CES validation diagnostics |
 | `Refresh` (tree view title bar) | Re-run validation and refresh the Package Explorer |
 

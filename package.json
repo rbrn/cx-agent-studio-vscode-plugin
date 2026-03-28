@@ -88,7 +88,11 @@
       },
       {
         "command": "cesValidator.pushCurrentPackage",
-        "title": "CES Validator: Push Current Package to Remote CES App"
+        "title": "CES Validator: Push Current Package Incrementally to CES"
+      },
+      {
+        "command": "cesValidator.showCurrentPackageDeploymentStatus",
+        "title": "CES Validator: Show Current Package Deployment Status"
       },
       {
         "command": "cesValidator.clearDiagnostics",

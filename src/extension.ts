@@ -6,6 +6,14 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { DeploymentValidationError, CesImportOptions, importPackageToCes, packageCesPackage } from "./core/deployment";
+import {
+  IncrementalCesTargetOptions,
+  PreparedIncrementalDeployment,
+  applyPreparedIncrementalDeployment,
+  finalizePreparedIncrementalDeployment,
+  loadDeploymentStatusSummary,
+  prepareIncrementalDeployment,
+} from "./core/incrementalDeployment";
 import { findPackageRootForPath } from "./core/packageDiscovery";
 import { ValidationOrchestrator } from "./core/orchestrator";
 import { CesPackageTreeProvider } from "./core/treeProvider";
@@ -210,40 +218,115 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
-        const options = await promptForCesImportOptions(context, rootPath, "push");
-        if (!options) {
+        const target = await promptForCesPushOptions(context, rootPath);
+        if (!target) {
           return;
         }
 
         outputChannel.show(true);
+        let prepared: PreparedIncrementalDeployment | null = null;
         await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            title: `Pushing '${path.basename(rootPath)}' to remote CES app`,
+            title: `Planning incremental CES push for '${path.basename(rootPath)}'`,
             cancellable: false,
           },
           async (progress) => {
-            progress.report({ message: "Packaging archive" });
+            progress.report({ message: "Validating package and building resource plan" });
             try {
-              const bundle = await packageCesPackage(rootPath);
-              progress.report({ message: `Pushing to app '${options.appId}'` });
-              const result = await importPackageToCes(bundle.zipFile, options);
-              saveImportProfile(context, rootPath, options);
-              outputChannel.appendLine(`[CES] Push complete: ${result.importedAppName ?? result.operationName}`);
-              outputChannel.appendLine(`[CES] App ID   : ${options.appId}`);
-              outputChannel.appendLine(`[CES] Strategy : ${options.importStrategy}`);
-              if (result.warnings.length > 0) {
-                outputChannel.appendLine(`[CES] Warnings : ${result.warnings.join(" | ")}`);
-              }
-
-              void vscode.window.showInformationMessage(
-                `CES push completed for app '${options.appId}'`,
-              );
+              prepared = await prepareIncrementalDeployment(rootPath, target);
+              savePushProfile(context, rootPath, target);
+              appendIncrementalPlan(outputChannel, prepared);
             } catch (error) {
               handleCommandError(error, outputChannel);
             }
           },
         );
+
+        if (!prepared) {
+          return;
+        }
+
+        const plannedDeployment: PreparedIncrementalDeployment = prepared;
+
+        treeProvider.refresh();
+        if (plannedDeployment.plan.summary.actionable === 0) {
+          finalizePreparedIncrementalDeployment(plannedDeployment, "noop", "Everything is up to date.");
+          treeProvider.refresh();
+          void vscode.window.showInformationMessage(`No incremental CES changes detected for '${path.basename(rootPath)}'.`);
+          return;
+        }
+
+        const selection = await vscode.window.showWarningMessage(
+          `Apply ${plannedDeployment.plan.summary.actionable} incremental CES change(s) to app '${target.appId}'? Removed items stay in local state only and are not deleted remotely.`,
+          { modal: true },
+          "Apply",
+          "Cancel",
+        );
+
+        if (selection !== "Apply") {
+          finalizePreparedIncrementalDeployment(plannedDeployment, "cancelled", "Deployment aborted by user.");
+          treeProvider.refresh();
+          outputChannel.appendLine("[CES] Incremental push cancelled by user.");
+          return;
+        }
+
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Pushing '${path.basename(rootPath)}' incrementally to CES`,
+            cancellable: false,
+          },
+          async (progress) => {
+            try {
+              const result = await applyPreparedIncrementalDeployment(plannedDeployment, (component, index, total) => {
+                progress.report({ message: `${index}/${total}: ${component.kind} ${component.resourceId}` });
+              });
+              outputChannel.appendLine(`[CES] Incremental push complete for app '${target.appId}'`);
+              outputChannel.appendLine(`[CES] Applied  : ${result.appliedCount} resource change(s)`);
+              outputChannel.appendLine(`[CES] Artifact : ${result.artifactPath}`);
+              outputChannel.appendLine(`[CES] State    : ${result.stateFile}`);
+              treeProvider.refresh();
+              void vscode.window.showInformationMessage(`CES incremental push completed for app '${target.appId}'.`);
+            } catch (error) {
+              treeProvider.refresh();
+              handleCommandError(error, outputChannel);
+            }
+          },
+        );
+      }),
+    );
+
+    context.subscriptions.push(
+      vscode.commands.registerCommand("cesValidator.showCurrentPackageDeploymentStatus", async () => {
+        const rootPath = await resolveTargetPackageRoot(orchestrator);
+        if (!rootPath) {
+          return;
+        }
+
+        const summary = loadDeploymentStatusSummary(rootPath);
+        outputChannel.show(true);
+        appendDeploymentStatus(outputChannel, summary);
+
+        const actions: string[] = [];
+        if (summary.latestArtifactPath) {
+          actions.push("Open Latest Artifact");
+        }
+        actions.push("Open State File");
+
+        const selection = await vscode.window.showInformationMessage(
+          `Loaded CES deployment status for '${path.basename(rootPath)}'.`,
+          ...actions,
+        );
+
+        if (selection === "Open Latest Artifact" && summary.latestArtifactPath) {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(summary.latestArtifactPath));
+          await vscode.window.showTextDocument(document, { preview: false });
+        }
+        if (selection === "Open State File") {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(summary.stateFile));
+          await vscode.window.showTextDocument(document, { preview: false });
+        }
       }),
     );
 
@@ -450,6 +533,52 @@ async function promptForCesImportOptions(
   };
 }
 
+async function promptForCesPushOptions(
+  context: vscode.ExtensionContext,
+  rootPath: string,
+): Promise<IncrementalCesTargetOptions | null> {
+  const defaults = getStoredImportProfile(context, rootPath);
+
+  const projectId = await vscode.window.showInputBox({
+    title: "Incremental CES Push",
+    prompt: "Google Cloud project ID",
+    value: defaults.projectId ?? "voice-banking-poc",
+    ignoreFocusOut: true,
+    validateInput: (value) => value.trim().length > 0 ? undefined : "Project ID is required.",
+  });
+  if (!projectId) {
+    return null;
+  }
+
+  const location = await vscode.window.showInputBox({
+    title: "Incremental CES Push",
+    prompt: "CES location (for example: us or eu)",
+    value: defaults.location ?? "us",
+    ignoreFocusOut: true,
+    validateInput: (value) => value.trim().length > 0 ? undefined : "Location is required.",
+  });
+  if (!location) {
+    return null;
+  }
+
+  const appId = await vscode.window.showInputBox({
+    title: "Incremental CES Push",
+    prompt: "Target remote CES app ID",
+    value: defaults.appId ?? "",
+    ignoreFocusOut: true,
+    validateInput: (value) => validateAppIdInput(value, true),
+  });
+  if (!appId) {
+    return null;
+  }
+
+  return {
+    projectId: projectId.trim(),
+    location: location.trim(),
+    appId: appId.trim(),
+  };
+}
+
 function handleCommandError(error: unknown, outputChannel: vscode.OutputChannel): void {
   if (error instanceof DeploymentValidationError) {
     outputChannel.appendLine(`[CES] Deployment blocked: ${error.message}`);
@@ -478,6 +607,79 @@ function saveImportProfile(context: vscode.ExtensionContext, rootPath: string, o
     importStrategy: options.importStrategy,
     ignoreAppLock: options.ignoreAppLock,
   } satisfies StoredImportProfile);
+}
+
+function savePushProfile(context: vscode.ExtensionContext, rootPath: string, options: IncrementalCesTargetOptions): void {
+  void context.workspaceState.update(`cesValidator.importProfile:${rootPath}`, {
+    projectId: options.projectId,
+    location: options.location,
+    appId: options.appId,
+  } satisfies StoredImportProfile);
+}
+
+function appendIncrementalPlan(outputChannel: vscode.OutputChannel, prepared: PreparedIncrementalDeployment): void {
+  outputChannel.appendLine(`[CES] Incremental deployment plan for ${path.basename(prepared.rootPath)}`);
+  outputChannel.appendLine(`[CES] Target   : ${prepared.target.projectId}/${prepared.target.location}/apps/${prepared.target.appId}`);
+  outputChannel.appendLine(`[CES] State    : ${prepared.storage.stateFile}`);
+  outputChannel.appendLine(`[CES] Artifact : ${prepared.artifactPath}`);
+  outputChannel.appendLine(
+    `[CES] Summary  : added=${prepared.plan.summary.added} updated=${prepared.plan.summary.modified} noop=${prepared.plan.summary.noop} removed=${prepared.plan.summary.removed} actionable=${prepared.plan.summary.actionable}`,
+  );
+  appendPlanGroup(outputChannel, "Added", prepared.plan.added);
+  appendPlanGroup(outputChannel, "Updated", prepared.plan.modified);
+  appendPlanGroup(outputChannel, "No-op", prepared.plan.noop);
+  if (prepared.plan.removed.length > 0) {
+    outputChannel.appendLine("[CES] Removed (state only; not deleted remotely):");
+    for (const key of prepared.plan.removed) {
+      outputChannel.appendLine(`[CES]   - ${key}`);
+    }
+  }
+}
+
+function appendPlanGroup(
+  outputChannel: vscode.OutputChannel,
+  label: string,
+  components: Array<{ kind: string; resourceId: string; displayName: string }>,
+): void {
+  outputChannel.appendLine(`[CES] ${label} (${components.length}):`);
+  if (components.length === 0) {
+    outputChannel.appendLine("[CES]   - none");
+    return;
+  }
+
+  for (const component of components) {
+    outputChannel.appendLine(`[CES]   - ${component.kind.padEnd(7, " ")} ${component.resourceId} (${component.displayName})`);
+  }
+}
+
+function appendDeploymentStatus(
+  outputChannel: vscode.OutputChannel,
+  summary: ReturnType<typeof loadDeploymentStatusSummary>,
+): void {
+  outputChannel.appendLine(`[CES] Deployment status for ${path.basename(summary.rootPath)}`);
+  outputChannel.appendLine(`[CES] State file : ${summary.stateFile}`);
+  outputChannel.appendLine(`[CES] Artifacts  : ${summary.artifactsDir}`);
+  outputChannel.appendLine(`[CES] Target     : ${summary.project ?? "-"}/${summary.location ?? "-"}/apps/${summary.appId ?? "-"}`);
+  if (summary.latestRun) {
+    outputChannel.appendLine(
+      `[CES] Latest run : ${summary.latestRun.runId} status=${summary.latestRun.status} completed=${summary.latestRun.completedAt ?? summary.latestRun.startedAt ?? "-"}`,
+    );
+    outputChannel.appendLine(`[CES] Git SHA    : ${summary.latestRun.gitCommitSha ?? "-"}`);
+    if (summary.latestRun.message) {
+      outputChannel.appendLine(`[CES] Outcome    : ${summary.latestRun.message}`);
+    }
+  } else {
+    outputChannel.appendLine("[CES] Latest run : none");
+  }
+  if (summary.latestArtifactPath) {
+    outputChannel.appendLine(`[CES] Artifact   : ${summary.latestArtifactPath}`);
+  }
+  outputChannel.appendLine(`[CES] Components : ${summary.components.length}`);
+  for (const component of summary.components) {
+    outputChannel.appendLine(
+      `[CES]   - ${component.kind.padEnd(7, " ")} ${component.resourceId} deployed=${component.deployedAt} remote=${component.resourceName}`,
+    );
+  }
 }
 
 function validateAppIdInput(value: string, requireValue: boolean): string | undefined {

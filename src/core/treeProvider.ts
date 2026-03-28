@@ -7,6 +7,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { loadDeploymentStatusSummary } from "./incrementalDeployment";
 import { buildPackageModel } from "./packageIndex";
 import { runRules } from "./rules";
 import { resolveDirectToolNavigation, resolveInstructionNavigation, resolveOpenApiOperationNavigation, resolveToolsetNavigation } from "./toolNavigation";
@@ -148,6 +149,7 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
         this.buildGuardrailsNode(model, issues),
         this.buildToolInventoryNode(model),
         this.buildEnvironmentNode(model, issues),
+        this.buildDeploymentNode(rootPath),
       ],
     };
   }
@@ -530,6 +532,77 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
     };
   }
 
+  private buildDeploymentNode(rootPath: string): TreeNode {
+    const summary = loadDeploymentStatusSummary(rootPath);
+    const latestRun = summary.latestRun;
+    const status = this.statusFromDeploymentRun(latestRun?.status);
+    const description = latestRun
+      ? `${latestRun.status} · ${latestRun.completedAt ?? latestRun.startedAt ?? "pending"}`
+      : summary.components.length > 0
+        ? `${summary.components.length} tracked resource${summary.components.length === 1 ? "" : "s"}`
+        : "not deployed";
+
+    const children: TreeNode[] = [
+      {
+        kind: "file",
+        label: "deploy-state.json",
+        description: summary.components.length > 0 ? `${summary.components.length} tracked resource${summary.components.length === 1 ? "" : "s"}` : "empty",
+        filePath: summary.stateFile,
+        status,
+        iconId: "database",
+      },
+    ];
+
+    if (summary.latestArtifactPath) {
+      children.unshift({
+        kind: "file",
+        label: path.basename(summary.latestArtifactPath),
+        description: latestRun?.status ?? "artifact",
+        filePath: summary.latestArtifactPath,
+        status,
+        iconId: "history",
+      });
+    }
+
+    if (latestRun) {
+      children.unshift({
+        kind: "info",
+        label: `Latest run: ${latestRun.runId}`,
+        description: latestRun.status,
+        status,
+        tooltip: latestRun.message ?? latestRun.runId,
+      });
+    }
+
+    if (summary.components.length > 0) {
+      children.push({
+        kind: "category",
+        label: `Resources (${summary.components.length})`,
+        description: `${summary.project ?? "-"}/${summary.location ?? "-"}/apps/${summary.appId ?? "-"}`,
+        status,
+        iconId: "cloud-upload",
+        children: summary.components.map((component) => ({
+          kind: component.kind === "agent" ? "agent" : component.kind === "tool" ? "tool" : "toolset",
+          label: component.resourceId,
+          description: `${component.kind} · ${component.deployedAt}`,
+          tooltip: `${component.displayName}\n${component.resourceName}`,
+          status: "pass",
+          iconId: component.kind === "agent" ? "robot" : component.kind === "tool" ? "symbol-method" : "tools",
+        })),
+      });
+    }
+
+    return {
+      kind: "category",
+      label: "Deployment",
+      description,
+      tooltip: `${rootPath}\nTarget: ${summary.project ?? "-"}/${summary.location ?? "-"}/apps/${summary.appId ?? "-"}`,
+      status,
+      iconId: "cloud-upload",
+      children,
+    };
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────
 
   private issueNode(issue: ValidationIssue): TreeNode {
@@ -556,6 +629,21 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
     if (errors > 0) { return `❌ ${errors} error${errors > 1 ? "s" : ""}`; }
     if (warns > 0) { return `⚠️ ${warns}`; }
     return "✅";
+  }
+
+  private statusFromDeploymentRun(status: string | undefined): "pass" | "warn" | "error" | "none" {
+    switch (status) {
+      case "success":
+      case "noop":
+        return "pass";
+      case "failed":
+        return "error";
+      case "planned":
+      case "cancelled":
+        return "warn";
+      default:
+        return "none";
+    }
   }
 
   private resolveIcon(node: TreeNode): vscode.ThemeIcon | undefined {
