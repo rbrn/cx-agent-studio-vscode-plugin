@@ -2,6 +2,19 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.11.0 — 2026-03-28
+
+### Added
+
+- Incremental CES deployment support for toolsets, tools, and agents with local hash-based state tracking under `.ces-validator/`
+- Deployment artifact generation under `.ces-validator/artifacts/` plus a dedicated `CES Validator: Show Current Package Deployment Status` command
+- Regression coverage for incremental deployment planning, apply flows, and deployment status summaries
+
+### Changed
+
+- The extension now presents an incremental deployment plan before applying remote CES changes, including actionable add/update/remove summaries
+- The CES Package Explorer now surfaces the latest deployment plan and status details directly in the tree view
+
 ## 0.10.2 — 2026-03-27
 
 ### Added
