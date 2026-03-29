@@ -43,6 +43,41 @@ function baseDeploymentFixture(): Record<string, string> {
   };
 }
 
+function aliasedToolDeploymentFixture(): Record<string, string> {
+  return {
+    "app.yaml": [
+      "displayName: sample_agent",
+      "rootAgent: voice_banking_agent",
+      "globalInstruction: global_instruction.txt",
+      "guardrails: []",
+      "",
+    ].join("\n"),
+    "global_instruction.txt": "Global instruction text for package.",
+    "agents/voice_banking_agent/voice_banking_agent.json": JSON.stringify(
+      {
+        displayName: "voice_banking_agent",
+        instruction: "agents/voice_banking_agent/instruction.txt",
+        tools: ["customer_lookup_wrapper"],
+      },
+      null,
+      2,
+    ),
+    "agents/voice_banking_agent/instruction.txt": "<role>Root agent</role>",
+    "tools/customer_lookup/customer_lookup.json": JSON.stringify(
+      {
+        displayName: "customer_lookup_wrapper",
+        pythonFunction: {
+          name: "customer_lookup_wrapper",
+          pythonCode: "tools/customer_lookup/python_code.py",
+        },
+      },
+      null,
+      2,
+    ),
+    "tools/customer_lookup/python_code.py": "def customer_lookup_wrapper():\n    return {'ok': True}\n",
+  };
+}
+
 test("collectRequiredArchiveMembers includes direct tool runtime files", () => {
   const rootPath = createFixture(baseDeploymentFixture());
 
@@ -75,6 +110,19 @@ test("findMissingArchiveMembers reports excluded direct tool files", () => {
     const missing = findMissingArchiveMembers(rootPath, archiveEntries);
     assert.equal(missing.includes(`${packageName}/tools/customer_lookup/customer_lookup.json`), true);
     assert.equal(missing.includes(`${packageName}/tools/customer_lookup/python_code.py`), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("collectRequiredArchiveMembers resolves direct tool displayName aliases to real manifest paths", () => {
+  const rootPath = createFixture(aliasedToolDeploymentFixture());
+
+  try {
+    const required = collectRequiredArchiveMembers(rootPath);
+    assert.equal(required.includes("tools/customer_lookup/customer_lookup.json"), true);
+    assert.equal(required.includes("tools/customer_lookup_wrapper/customer_lookup_wrapper.json"), false);
+    assert.equal(required.includes("tools/customer_lookup/python_code.py"), true);
   } finally {
     cleanupFixture(rootPath);
   }

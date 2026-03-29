@@ -64,6 +64,7 @@ export class DeploymentValidationError extends Error {
 export function collectRequiredArchiveMembers(rootPath: string): string[] {
   const model = buildPackageModel(rootPath);
   const required = new Set<string>();
+  const toolManifestPaths = buildToolManifestReferenceMap(model, rootPath);
 
   if (model.manifestPath) {
     addExistingRelativePath(required, rootPath, model.manifestPath);
@@ -98,7 +99,12 @@ export function collectRequiredArchiveMembers(rootPath: string): string[] {
     if (Array.isArray(tools)) {
       for (const tool of tools) {
         if (typeof tool === "string" && tool.trim().length > 0 && !BUILTIN_TOOLS.has(tool)) {
-          required.add(normalizeSeparators(`tools/${tool}/${tool}.json`));
+          const resolvedManifestPath = toolManifestPaths.get(tool.trim());
+          if (resolvedManifestPath) {
+            required.add(resolvedManifestPath);
+          } else {
+            required.add(normalizeSeparators(`tools/${tool}/${tool}.json`));
+          }
         }
       }
     }
@@ -132,6 +138,22 @@ export function collectRequiredArchiveMembers(rootPath: string): string[] {
   }
 
   return [...required].sort();
+}
+
+function buildToolManifestReferenceMap(model: PackageModel, rootPath: string): Map<string, string> {
+  const references = new Map<string, string>();
+
+  for (const toolInfo of model.pythonToolInfos) {
+    const manifestRelativePath = normalizeSeparators(toRelativePath(rootPath, toolInfo.manifestPath));
+    references.set(toolInfo.name, manifestRelativePath);
+
+    const displayName = toolInfo.manifestData?.displayName;
+    if (typeof displayName === "string" && displayName.trim().length > 0) {
+      references.set(displayName.trim(), manifestRelativePath);
+    }
+  }
+
+  return references;
 }
 
 export function findMissingArchiveMembers(rootPath: string, archiveEntries: Iterable<string>): string[] {
