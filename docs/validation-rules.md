@@ -92,7 +92,7 @@ Validates each agent directory under `agents/`.
 | `CES_AGENT_INSTRUCTION_PATH_MISMATCH` | warning | Instruction path doesn't follow convention `agents/<name>/instruction.txt` | — |
 | `CES_AGENT_INSTRUCTION_FILE_MISSING` | error | Instruction file referenced in manifest doesn't exist | ✅ #5 |
 | `CES_CHILD_AGENT_MISSING` | error | `childAgents` entry references a non-existent agent directory | ✅ #10 |
-| `CES_AGENT_TOOLSET_REFERENCE_MISSING` | error | Agent `toolsets[].toolset` references a non-existent toolset | ✅ #6 |
+| `CES_AGENT_TOOLSET_REFERENCE_MISSING` | error | Agent `toolsets[].toolset` references a toolset that matches neither a `toolsets/` directory name nor a toolset manifest `displayName` | ✅ #6 |
 
 ---
 
@@ -113,7 +113,7 @@ Validates each entry in agent `tools: [...]` arrays.
 
 | Diagnostic Code | Severity | Description | Python |
 |-----------------|----------|-------------|:------:|
-| `CES_AGENT_TOOL_NOT_FOUND` | error | Tool name has no `tools/<name>/<name>.json` and is not a known built-in (`end_session`) | ✅ #12 |
+| `CES_AGENT_TOOL_NOT_FOUND` | error | Tool name matches neither a `tools/<name>/<name>.json` directory ID nor a tool manifest `displayName`/`pythonFunction.name`, and is not a known built-in (`end_session`) | ✅ #12 |
 
 ---
 
@@ -212,7 +212,7 @@ Validates `environment.json` structure and cross-references. Aligned with the [o
 | `CES_ENVIRONMENT_OPENAPI_URL_INVALID` | error | `openApiToolset.url` is not a string | — |
 | `CES_ENVIRONMENT_APP_INVALID` | error | `app` is present but not an object | ✅ #13 |
 | `CES_ENVIRONMENT_APP_LOGGING_INVALID` | error | `app.loggingSettings` is not an object | ✅ #13 |
-| `CES_ENVIRONMENT_TOOLSET_NOT_FOUND` | error | Toolset name in env.json doesn't match any `toolsets/` directory | ✅ #13 |
+| `CES_ENVIRONMENT_TOOLSET_NOT_FOUND` | error | Toolset name in env.json matches neither a `toolsets/` directory name nor a toolset manifest `displayName` | ✅ #13 |
 | `CES_ENVIRONMENT_LOCALHOST_WARNING` | warning | Contains `localhost` or `127.0.0.1` URLs | — |
 
 ---

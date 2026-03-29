@@ -8,7 +8,7 @@ import * as path from "path";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
 import { validateInstructionStructure } from "./instructionContracts";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
-import { AgentInfo, PackageModel, PythonToolInfo, ValidationIssue, ValidationSeverity } from "./types";
+import { AgentInfo, PackageModel, PythonToolInfo, ToolsetInfo, ValidationIssue, ValidationSeverity } from "./types";
 
 const ROOT_DEPTH_LIMIT = 2;
 const TOOLSET_DEPTH_LIMIT = 3;
@@ -315,7 +315,7 @@ function validateManifestImportCompatibility(model: PackageModel, issues: Valida
 }
 
 function validateAgents(model: PackageModel, issues: ValidationIssue[]): void {
-  const toolsetNames = new Set(model.toolsetInfos.map((toolset) => toolset.name));
+  const toolsetNames = buildToolsetReferenceNameSet(model.toolsetInfos);
   const agentNames = new Set(model.agentInfos.map((agent) => agent.name));
 
   for (const agentInfo of model.agentInfos) {
@@ -461,7 +461,7 @@ function validateAgentCallbacks(model: PackageModel, issues: ValidationIssue[]):
 }
 
 function validateAgentToolsExistence(model: PackageModel, issues: ValidationIssue[]): void {
-  const pythonToolNames = new Set(model.pythonToolInfos.map((t) => t.name));
+  const pythonToolNames = buildPythonToolReferenceNameSet(model.pythonToolInfos);
 
   for (const agentInfo of model.agentInfos) {
     if (!isRecord(agentInfo.manifestData)) {
@@ -795,7 +795,7 @@ function validateEnvironment(model: PackageModel, issues: ValidationIssue[]): vo
   }
 
   // Validate that toolset names in environment.json match existing toolsets/
-  const toolsetNames = new Set(model.toolsetInfos.map((t) => t.name));
+  const toolsetNames = buildToolsetReferenceNameSet(model.toolsetInfos);
   if (isRecord(toolsets)) {
     for (const tsName of Object.keys(toolsets)) {
       if (!toolsetNames.has(tsName)) {
@@ -1327,6 +1327,52 @@ function readDeclaredSchemaPath(toolsetManifest: Record<string, unknown> | null)
   return typeof openApiToolset.openApiSchema === "string"
     ? openApiToolset.openApiSchema
     : null;
+}
+
+function buildToolsetReferenceNameSet(toolsetInfos: ToolsetInfo[]): Set<string> {
+  const names = new Set<string>();
+
+  for (const toolsetInfo of toolsetInfos) {
+    addReferenceName(names, toolsetInfo.name);
+    addReferenceName(names, readManifestDisplayName(toolsetInfo.manifestData));
+  }
+
+  return names;
+}
+
+function buildPythonToolReferenceNameSet(pythonToolInfos: PythonToolInfo[]): Set<string> {
+  const names = new Set<string>();
+
+  for (const toolInfo of pythonToolInfos) {
+    addReferenceName(names, toolInfo.name);
+    addReferenceName(names, readManifestDisplayName(toolInfo.manifestData));
+
+    const pythonFunction = isRecord(toolInfo.manifestData) && isRecord(toolInfo.manifestData.pythonFunction)
+      ? toolInfo.manifestData.pythonFunction
+      : null;
+    addReferenceName(names, typeof pythonFunction?.name === "string" ? pythonFunction.name : null);
+  }
+
+  return names;
+}
+
+function readManifestDisplayName(manifestData: Record<string, unknown> | null): string | null {
+  if (!isRecord(manifestData) || typeof manifestData.displayName !== "string") {
+    return null;
+  }
+
+  return manifestData.displayName;
+}
+
+function addReferenceName(names: Set<string>, value: string | null): void {
+  if (typeof value !== "string") {
+    return;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length > 0) {
+    names.add(normalized);
+  }
 }
 
 function extractToolsetName(toolsetEntry: unknown): string | null {

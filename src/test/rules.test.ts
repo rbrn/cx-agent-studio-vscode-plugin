@@ -1082,6 +1082,32 @@ test("agent tool referencing existing Python function tool passes", () => {
   assert.equal(hasCode(issues, "CES_AGENT_TOOL_NOT_FOUND"), false);
 });
 
+test("agent tool referencing Python tool displayName alias passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["friendly_greeting", "end_session"],
+    },
+    null,
+    2,
+  );
+  files["tools/greeting/greeting.json"] = JSON.stringify(
+    {
+      displayName: "friendly_greeting",
+      pythonFunction: { pythonCode: "tools/greeting/python_function/python_code.py" },
+    },
+    null,
+    2,
+  );
+  files["tools/greeting/python_function/python_code.py"] = "def greeting(): pass";
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_AGENT_TOOL_NOT_FOUND"), false);
+});
+
 test("agent tool referencing built-in end_session passes", () => {
   const files = baseValidFixture();
   files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
@@ -1118,11 +1144,69 @@ test("agent tool referencing missing tool is reported", () => {
   assert.ok(issue?.message.includes("nonexistent_tool"));
 });
 
+test("agent toolset referencing existing toolset displayName alias passes", () => {
+  const files = baseValidFixture();
+  files["agents/location_services_agent/location_services_agent.json"] = JSON.stringify(
+    {
+      displayName: "location_services_agent",
+      instruction: "agents/location_services_agent/instruction.txt",
+      toolsets: [{ toolset: "branch_locator", toolIds: ["searchBranches", "getBranch"] }],
+    },
+    null,
+    2,
+  );
+  files["toolsets/location/location.json"] = JSON.stringify(
+    {
+      displayName: "branch_locator",
+      toolIds: ["searchBranches", "getBranch"],
+      openApiToolset: {
+        openApiSchema: "toolsets/location/open_api_toolset/open_api_schema.yaml",
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_AGENT_TOOLSET_REFERENCE_MISSING"), false);
+});
+
 // ── Environment.json toolset cross-reference tests ────────────────────────
 
 test("environment.json toolset matching existing toolset passes", () => {
   const files = baseValidFixture();
   // default fixture already has environment.json with "location" -> toolsets/location
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_ENVIRONMENT_TOOLSET_NOT_FOUND"), false);
+});
+
+test("environment.json toolset matching toolset displayName alias passes", () => {
+  const files = baseValidFixture();
+  files["toolsets/location/location.json"] = JSON.stringify(
+    {
+      displayName: "branch_locator",
+      toolIds: ["searchBranches", "getBranch"],
+      openApiToolset: {
+        openApiSchema: "toolsets/location/open_api_toolset/open_api_schema.yaml",
+      },
+    },
+    null,
+    2,
+  );
+  files["environment.json"] = JSON.stringify(
+    {
+      toolsets: {
+        branch_locator: {
+          openApiToolset: {
+            url: "https://api.example.com",
+          },
+        },
+      },
+    },
+    null,
+    2,
+  );
+
   const issues = runValidation(files);
   assert.equal(hasCode(issues, "CES_ENVIRONMENT_TOOLSET_NOT_FOUND"), false);
 });
