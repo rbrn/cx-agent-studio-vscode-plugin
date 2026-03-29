@@ -5,7 +5,7 @@
 
 import { strict as assert } from "assert";
 import test from "node:test";
-import { collectRequiredArchiveMembers, findMissingArchiveMembers } from "../core/deployment";
+import { collectRequiredArchiveMembers, findMissingArchiveMembers, findUnsupportedRootArchiveMembers } from "../core/deployment";
 import { cleanupFixture, createFixture } from "./helpers";
 
 function baseDeploymentFixture(): Record<string, string> {
@@ -75,6 +75,31 @@ test("findMissingArchiveMembers reports excluded direct tool files", () => {
     const missing = findMissingArchiveMembers(rootPath, archiveEntries);
     assert.equal(missing.includes(`${packageName}/tools/customer_lookup/customer_lookup.json`), true);
     assert.equal(missing.includes(`${packageName}/tools/customer_lookup/python_code.py`), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("findUnsupportedRootArchiveMembers reports import-unsafe root files", () => {
+  const rootPath = createFixture({
+    ...baseDeploymentFixture(),
+    "validate-package.py": "print('helper')\n",
+  });
+
+  try {
+    const packageName = rootPath.split(/[\\/]/).pop() ?? "package";
+    const unsupported = findUnsupportedRootArchiveMembers(rootPath, [
+      `${packageName}/`,
+      `${packageName}/app.yaml`,
+      `${packageName}/global_instruction.txt`,
+      `${packageName}/agents/voice_banking_agent/voice_banking_agent.json`,
+      `${packageName}/agents/voice_banking_agent/instruction.txt`,
+      `${packageName}/tools/customer_lookup/customer_lookup.json`,
+      `${packageName}/tools/customer_lookup/python_code.py`,
+      `${packageName}/validate-package.py`,
+    ]);
+
+    assert.deepEqual(unsupported, [`${packageName}/validate-package.py`]);
   } finally {
     cleanupFixture(rootPath);
   }

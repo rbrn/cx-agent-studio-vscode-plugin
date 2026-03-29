@@ -14,6 +14,7 @@ import { runRules } from "./rules";
 
 const SCHEMA_VERSION = 1;
 const KIND_ORDER: Record<DeployableComponentKind, number> = { toolset: 0, tool: 1, agent: 2 };
+const BUILTIN_TOOLS = new Set(["end_session"]);
 const CALLBACK_FIELDS = [
   "beforeAgentCallbacks",
   "beforeModelCallbacks",
@@ -40,6 +41,7 @@ const AGENT_ALLOWED_UPDATE_FIELDS = [
   "transferRules",
 ] as const;
 const TOOL_ALLOWED_UPDATE_FIELDS = [
+  "displayName",
   "agentTool",
   "clientFunction",
   "connectorTool",
@@ -186,6 +188,7 @@ export interface PreparedIncrementalDeployment {
   storage: DeploymentStoragePaths;
   runId: string;
   gitCommitSha: string | null;
+  accessToken: string;
   state: DeploymentState;
   plan: IncrementalDeploymentPlan;
   artifact: DeploymentRunArtifact;
@@ -269,7 +272,9 @@ export async function prepareIncrementalDeployment(
   const storage = getDeploymentStoragePaths(rootPath);
   const state = loadDeploymentState(storage.stateFile);
   const components = discoverDeployableComponents(rootPath);
-  const plan = buildIncrementalPlan(components, state.components);
+  const accessToken = await getAccessToken();
+  const initialPlan = buildIncrementalPlan(components, state.components);
+  const { plan } = await reconcileNoopComponentsWithRemote(rootPath, target, state.components, initialPlan, accessToken);
   const runId = buildRunId();
   const artifactPath = path.join(storage.artifactsDir, `${runId}.json`);
   const gitCommitSha = await getGitCommitSha(rootPath);
@@ -292,6 +297,7 @@ export async function prepareIncrementalDeployment(
     storage,
     runId,
     gitCommitSha,
+    accessToken,
     state,
     plan,
     artifact,
@@ -322,7 +328,6 @@ export async function applyPreparedIncrementalDeployment(
     };
   }
 
-  const token = await getAccessToken();
   prepared.state.schema_version = SCHEMA_VERSION;
   prepared.state.app_root = prepared.rootPath;
   prepared.state.project = prepared.target.projectId;
@@ -333,13 +338,17 @@ export async function applyPreparedIncrementalDeployment(
     onProgress?.(component, index + 1, prepared.plan.actionable.length);
     const request = buildDeploymentRequest(component, prepared.rootPath, prepared.target, prepared.state.components);
     const artifactEntry = getArtifactEntry(prepared.artifact, component.key);
-    const existingResourceName = await findExistingResourceName(request, token);
+    const existingResourceName = await findExistingResourceName(
+      request,
+      prepared.accessToken,
+      preferredResourceNameFor(component, prepared.state.components, prepared.target),
+    );
     artifactEntry.operation = existingResourceName ? "patch" : "create";
     if (existingResourceName) {
       artifactEntry.before_resource_name = existingResourceName;
     }
 
-    const response = await applyRequest(request, token, existingResourceName);
+    const response = await applyRequest(request, prepared.accessToken, existingResourceName);
     artifactEntry.http_status = response.status;
 
     if (response.status >= 200 && response.status < 300) {
@@ -363,14 +372,14 @@ export async function applyPreparedIncrementalDeployment(
     artifactEntry.execution_status = "failed";
     artifactEntry.state_updated = false;
     artifactEntry.deployed_at = timestampNow();
-    artifactEntry.error = response.body || `HTTP ${response.status}`;
+    artifactEntry.error = buildDeploymentErrorMessage(component, prepared.target, response.status, response.body);
     finalizeArtifact(
       prepared.artifact,
       "failed",
-      `Deployment failed for ${component.key} with HTTP ${response.status}.`,
+      buildDeploymentErrorMessage(component, prepared.target, response.status, response.body),
     );
     writeJsonFile(prepared.artifactPath, prepared.artifact);
-    throw new Error(response.body || `CES deployment failed with HTTP ${response.status}.`);
+    throw new Error(buildDeploymentErrorMessage(component, prepared.target, response.status, response.body));
   }
 
   finalizePreparedIncrementalDeployment(
@@ -866,7 +875,7 @@ function buildDeploymentRequest(
   const manifest = readJsonObject(component.sourcePath);
   const endpoint = resolveCesEndpoint(target.location, target.endpoint);
   const appName = `projects/${target.projectId}/locations/${target.location}/apps/${target.appId}`;
-  const { agentNames, toolNames, toolsetNames } = resolveResourceMaps(stateComponents);
+  const { agentNames, toolNames, toolsetNames } = resolveResourceMaps(stateComponents, target);
 
   switch (component.kind) {
     case "agent": {
@@ -913,6 +922,57 @@ function buildDeploymentRequest(
   throw new Error(`Unsupported deployable component kind: ${String(component.kind)}`);
 }
 
+export async function reconcileNoopComponentsWithRemote(
+  rootPath: string,
+  target: IncrementalCesTargetOptions,
+  stateComponents: Record<string, DeploymentStateEntry>,
+  plan: IncrementalDeploymentPlan,
+  accessToken: string,
+): Promise<{ plan: IncrementalDeploymentPlan; staleComponents: DeployableComponent[] }> {
+  const added = [...plan.added];
+  const modified = [...plan.modified];
+  const noop: DeployableComponent[] = [];
+  const staleComponents: DeployableComponent[] = [];
+
+  for (const component of plan.noop) {
+    const request = buildDeploymentRequest(component, rootPath, target, stateComponents);
+    const existingResourceName = await findExistingResourceName(
+      request,
+      accessToken,
+      preferredResourceNameFor(component, stateComponents, target),
+    );
+    if (existingResourceName) {
+      noop.push(component);
+      continue;
+    }
+    staleComponents.push(component);
+    added.push(component);
+  }
+
+  const actionable = [...added, ...modified].sort((left, right) => {
+    const kindDelta = KIND_ORDER[left.kind] - KIND_ORDER[right.kind];
+    return kindDelta !== 0 ? kindDelta : left.resourceId.localeCompare(right.resourceId);
+  });
+
+  return {
+    staleComponents,
+    plan: {
+      added,
+      modified,
+      noop,
+      removed: [...plan.removed],
+      actionable,
+      summary: {
+        added: added.length,
+        modified: modified.length,
+        noop: noop.length,
+        removed: plan.removed.length,
+        actionable: actionable.length,
+      },
+    },
+  };
+}
+
 function convertAgentManifest(
   manifest: Record<string, unknown>,
   rootPath: string,
@@ -935,7 +995,7 @@ function convertAgentManifest(
   if (Array.isArray(payload.tools)) {
     payload.tools = payload.tools
       .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-      .map((value) => toolNames[value] ?? fullToolName(target, value));
+      .map((value) => resolveToolName(target, value, toolNames));
   }
 
   if (Array.isArray(payload.toolsets)) {
@@ -1035,7 +1095,10 @@ function buildUpdateMask(payload: Record<string, unknown>, allowedFields: readon
   return fields.join(",");
 }
 
-function resolveResourceMaps(stateComponents: Record<string, DeploymentStateEntry>): {
+function resolveResourceMaps(
+  stateComponents: Record<string, DeploymentStateEntry>,
+  target: IncrementalCesTargetOptions,
+): {
   agentNames: Record<string, string>;
   toolNames: Record<string, string>;
   toolsetNames: Record<string, string>;
@@ -1043,8 +1106,12 @@ function resolveResourceMaps(stateComponents: Record<string, DeploymentStateEntr
   const agentNames: Record<string, string> = {};
   const toolNames: Record<string, string> = {};
   const toolsetNames: Record<string, string> = {};
+  const resourcePrefix = `projects/${target.projectId}/locations/${target.location}/apps/${target.appId}/`;
 
   for (const entry of Object.values(stateComponents)) {
+    if (!entry.resource_name.startsWith(resourcePrefix)) {
+      continue;
+    }
     const targetMap = entry.kind === "agent" ? agentNames : entry.kind === "tool" ? toolNames : toolsetNames;
     targetMap[entry.resource_id] = entry.resource_name;
     targetMap[entry.display_name] = entry.resource_name;
@@ -1053,7 +1120,25 @@ function resolveResourceMaps(stateComponents: Record<string, DeploymentStateEntr
   return { agentNames, toolNames, toolsetNames };
 }
 
-async function findExistingResourceName(request: DeploymentRequest, token: string): Promise<string | null> {
+async function findExistingResourceName(
+  request: DeploymentRequest,
+  token: string,
+  preferredResourceName?: string | null,
+): Promise<string | null> {
+  if (preferredResourceName) {
+    const preferredResponse = await httpRequest("GET", buildResourceUrl(request.collectionUrl, preferredResourceName), token);
+    if (preferredResponse.status === 200) {
+      const parsed = parseJsonObject(preferredResponse.body);
+      if (parsed && typeof parsed.name === "string" && parsed.name.length > 0) {
+        return parsed.name;
+      }
+      return preferredResourceName;
+    }
+    if (preferredResponse.status !== 404) {
+      throw new Error(`Failed to determine whether preferred ${request.kind} resource exists (${preferredResponse.status}).`);
+    }
+  }
+
   const directResponse = await httpRequest("GET", request.resourceUrl, token);
   if (directResponse.status === 200) {
     const parsed = parseJsonObject(directResponse.body);
@@ -1122,6 +1207,34 @@ function buildResourceUrl(collectionUrl: string, resourceName: string): string {
   return `${collectionUrl.slice(0, markerIndex + marker.length)}${resourceName}`;
 }
 
+function preferredResourceNameFor(
+  component: DeployableComponent,
+  stateComponents: Record<string, DeploymentStateEntry>,
+  target: IncrementalCesTargetOptions,
+): string | null {
+  const entry = stateComponents[component.key];
+  if (!entry) {
+    return null;
+  }
+  const resourcePrefix = `projects/${target.projectId}/locations/${target.location}/apps/${target.appId}/`;
+  return entry.resource_name.startsWith(resourcePrefix) ? entry.resource_name : null;
+}
+
+function resolveToolName(
+  target: IncrementalCesTargetOptions,
+  toolId: string,
+  toolNames: Record<string, string>,
+): string {
+  const resolved = toolNames[toolId];
+  if (resolved) {
+    return resolved;
+  }
+  if (BUILTIN_TOOLS.has(toolId)) {
+    return toolId;
+  }
+  return fullToolName(target, toolId);
+}
+
 function remoteMetadataFromBody(body: string): { name?: string; updateTime?: string; createTime?: string } {
   const payload = parseJsonObject(body, false);
   return {
@@ -1129,6 +1242,26 @@ function remoteMetadataFromBody(body: string): { name?: string; updateTime?: str
     updateTime: typeof payload?.updateTime === "string" ? payload.updateTime : undefined,
     createTime: typeof payload?.createTime === "string" ? payload.createTime : undefined,
   };
+}
+
+function buildDeploymentErrorMessage(
+  component: DeployableComponent,
+  target: IncrementalCesTargetOptions,
+  status: number,
+  body: string,
+): string {
+  const payload = parseJsonObject(body, false);
+  const detail = isRecord(payload?.error) && typeof payload.error.message === "string"
+    ? payload.error.message
+    : undefined;
+  let message = `Deployment failed for ${component.key} with HTTP ${status}.`;
+  if (status === 404) {
+    message += ` If the CES app does not exist yet, import it first (appId='${target.appId}', location='${target.location}').`;
+  }
+  if (detail) {
+    message += ` CES said: ${detail}`;
+  }
+  return message;
 }
 
 async function httpRequest(

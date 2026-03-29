@@ -163,6 +163,56 @@ export function findMissingArchiveMembers(rootPath: string, archiveEntries: Iter
   return missing.sort();
 }
 
+export function findUnsupportedRootArchiveMembers(rootPath: string, archiveEntries: Iterable<string>): string[] {
+  const packageName = path.basename(rootPath);
+  const model = buildPackageModel(rootPath);
+  const normalizedEntries = new Set<string>();
+
+  for (const entry of archiveEntries) {
+    const normalized = normalizeSeparators(entry).replace(/\/+$/, "");
+    if (normalized.length > 0) {
+      normalizedEntries.add(normalized);
+    }
+  }
+
+  const manifestBasename = model.manifestPath ? path.basename(model.manifestPath) : "app.yaml";
+  const allowedRootEntries = new Set([
+    manifestBasename,
+    "environment.json",
+    "agents",
+    "tools",
+    "toolsets",
+    "guardrails",
+    "evaluations",
+  ]);
+
+  const globalInstruction = model.manifestData?.globalInstruction;
+  if (typeof globalInstruction === "string" && !isLikelyInlineGlobalInstruction(globalInstruction)) {
+    const normalizedInstruction = normalizeSeparators(globalInstruction.trim());
+    if (normalizedInstruction.length > 0 && !normalizedInstruction.includes("/")) {
+      allowedRootEntries.add(normalizedInstruction);
+    }
+  }
+
+  const prefix = `${packageName}/`;
+  const unsupported: string[] = [];
+  for (const entry of normalizedEntries) {
+    if (!entry.startsWith(prefix)) {
+      continue;
+    }
+    const relativeEntry = entry.slice(prefix.length);
+    if (!relativeEntry) {
+      continue;
+    }
+    const rootName = relativeEntry.split("/", 1)[0] ?? "";
+    if (!allowedRootEntries.has(rootName)) {
+      unsupported.push(entry);
+    }
+  }
+
+  return unsupported.sort();
+}
+
 export async function packageCesPackage(rootPath: string): Promise<PackageBundleResult> {
   const validationIssues = validatePackageForDeployment(rootPath);
   const packageName = path.basename(rootPath);
@@ -172,13 +222,21 @@ export async function packageCesPackage(rootPath: string): Promise<PackageBundle
 
   fs.rmSync(zipFile, { force: true });
 
-  await runCommand("zip", ["-r", zipFile, packageName, "-x", `${packageName}/**/__pycache__/*`], path.dirname(rootPath));
+  await runCommand("zip", ["-r", zipFile, packageName, "-x", `${packageName}/validate-package.py`, `${packageName}/**/__pycache__/*`], path.dirname(rootPath));
   fs.copyFileSync(zipFile, latestZipFile);
 
-  const missingMembers = await validateArchiveContents(rootPath, zipFile);
+  const archiveEntries = await listArchiveEntries(zipFile);
+  const missingMembers = findMissingArchiveMembers(rootPath, archiveEntries);
   if (missingMembers.length > 0) {
     throw new Error(
       `Archive validation failed. Missing required package member(s): ${missingMembers.slice(0, 5).join(", ")}${missingMembers.length > 5 ? ` (+${missingMembers.length - 5} more)` : ""}`,
+    );
+  }
+
+  const unsupportedMembers = findUnsupportedRootArchiveMembers(rootPath, archiveEntries);
+  if (unsupportedMembers.length > 0) {
+    throw new Error(
+      `Archive validation failed. Unsupported root-level package member(s): ${unsupportedMembers.slice(0, 5).join(", ")}${unsupportedMembers.length > 5 ? ` (+${unsupportedMembers.length - 5} more)` : ""}`,
     );
   }
 

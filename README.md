@@ -3,7 +3,7 @@
 Real-time validation, packaging, full-app import, incremental resource push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.11.0-green)
+![Version](https://img.shields.io/badge/version-0.11.1-green)
 
 ---
 
@@ -14,7 +14,7 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.11.0.vsix
+code --install-extension releases/ces-package-validator-0.11.1.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.11.0.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.11.0.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.11.1.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -188,7 +188,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.11.0.vsix # Pre-built extension
+│   └── ces-package-validator-0.11.1.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -216,6 +216,14 @@ ces-validate /path/to/agent-package
 ## 📋 Changelog
 
 The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
+
+### 0.11.1 (2026-03-29)
+
+**Deployment reliability fixes:**
+
+- Incremental CES push now revalidates remote existence for locally tracked resources before reporting a no-op
+- Built-in CES tools like `end_session` are preserved during incremental agent creation
+- Packaging now excludes import-unsafe root helper files and validates unsupported root ZIP entries before CES import
 
 ### 0.11.0 (2026-03-28)
 

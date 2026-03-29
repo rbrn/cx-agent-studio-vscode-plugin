@@ -8,11 +8,13 @@ import * as fs from "fs";
 import * as path from "path";
 import test from "node:test";
 import {
+  applyPreparedIncrementalDeployment,
   discoverDeployableComponents,
   finalizePreparedIncrementalDeployment,
   getDeploymentStoragePaths,
   loadDeploymentStatusSummary,
   prepareIncrementalDeployment,
+  reconcileNoopComponentsWithRemote,
 } from "../core/incrementalDeployment";
 import { cleanupFixture, createFixture } from "./helpers";
 
@@ -179,33 +181,133 @@ test("prepareIncrementalDeployment classifies modified, noop, and removed compon
       "utf8",
     );
 
-    const prepared = await prepareIncrementalDeployment(rootPath, {
-      projectId: "test-project",
-      location: "us",
-      appId: "demo-app",
-    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/toolsets/account_api")) {
+        return new Response(JSON.stringify({ name: "projects/test/toolsets/account_api" }), { status: 200 });
+      }
+      if (url.includes("/tools/customer_lookup")) {
+        return new Response(JSON.stringify({ name: "projects/test/tools/customer_lookup" }), { status: 200 });
+      }
+      if (url.includes("/agents/voice_banking_agent")) {
+        return new Response(JSON.stringify({ name: "projects/test/agents/voice_banking_agent" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as typeof fetch;
 
-    assert.equal(prepared.plan.summary.added, 0);
-    assert.equal(prepared.plan.summary.modified, 1);
-    assert.equal(prepared.plan.summary.noop, 2);
-    assert.equal(prepared.plan.summary.removed, 1);
-    assert.equal(prepared.plan.summary.actionable, 1);
-    assert.deepEqual(prepared.plan.modified.map((component) => component.key), ["agent:voice_banking_agent"]);
-    assert.equal(fs.existsSync(prepared.artifactPath), true);
+    try {
+      const prepared = await prepareIncrementalDeployment(rootPath, {
+        projectId: "test-project",
+        location: "us",
+        appId: "demo-app",
+      });
 
-    finalizePreparedIncrementalDeployment(prepared, "cancelled", "User cancelled deployment.");
-    const status = loadDeploymentStatusSummary(rootPath);
-    assert.equal(status.latestRun?.status, "cancelled");
-    assert.equal(status.latestRun?.message, "User cancelled deployment.");
-    assert.equal(status.latestPlan?.summary.modified, 1);
-    assert.equal(status.latestPlan?.summary.removed, 1);
-    assert.deepEqual(status.latestPlan?.components.map((component) => component.plan_status), [
-      "noop",
-      "noop",
-      "modified",
-      "removed",
-    ]);
-    assert.equal(status.components.length, 4);
+      assert.equal(prepared.plan.summary.added, 0);
+      assert.equal(prepared.plan.summary.modified, 1);
+      assert.equal(prepared.plan.summary.noop, 2);
+      assert.equal(prepared.plan.summary.removed, 1);
+      assert.equal(prepared.plan.summary.actionable, 1);
+      assert.deepEqual(prepared.plan.modified.map((component) => component.key), ["agent:voice_banking_agent"]);
+      assert.equal(fs.existsSync(prepared.artifactPath), true);
+
+      finalizePreparedIncrementalDeployment(prepared, "cancelled", "User cancelled deployment.");
+      const status = loadDeploymentStatusSummary(rootPath);
+      assert.equal(status.latestRun?.status, "cancelled");
+      assert.equal(status.latestRun?.message, "User cancelled deployment.");
+      assert.equal(status.latestPlan?.summary.modified, 1);
+      assert.equal(status.latestPlan?.summary.removed, 1);
+      assert.deepEqual(status.latestPlan?.components.map((component) => component.plan_status), [
+        "noop",
+        "noop",
+        "modified",
+        "removed",
+      ]);
+      assert.equal(status.components.length, 4);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("reconcileNoopComponentsWithRemote reclassifies missing remote resources as added", async () => {
+  const rootPath = createFixture(incrementalFixture());
+
+  try {
+    writeStateFromComponents(rootPath);
+    const components = discoverDeployableComponents(rootPath);
+    const storage = getDeploymentStoragePaths(rootPath);
+    const state = JSON.parse(fs.readFileSync(storage.stateFile, "utf8")) as { components: Record<string, unknown> };
+    const plan = {
+      added: [],
+      modified: [],
+      noop: components,
+      removed: [],
+      actionable: [],
+      summary: { added: 0, modified: 0, noop: components.length, removed: 0, actionable: 0 },
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/toolsets/account_api")) {
+        return new Response(JSON.stringify({ name: "projects/test/toolsets/account_api" }), { status: 200 });
+      }
+      if (url.includes("/tools/customer_lookup")) {
+        return new Response(JSON.stringify({ error: { code: 404 } }), { status: 404 });
+      }
+      if (url.includes("/apps/demo-app/tools")) {
+        return new Response(JSON.stringify({ tools: [] }), { status: 200 });
+      }
+      if (url.includes("/agents/voice_banking_agent")) {
+        return new Response(JSON.stringify({ name: "projects/test/agents/voice_banking_agent" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as typeof fetch;
+
+    try {
+      const reconciled = await reconcileNoopComponentsWithRemote(
+        rootPath,
+        { projectId: "test-project", location: "us", appId: "demo-app" },
+        state.components as never,
+        plan,
+        "token",
+      );
+
+      assert.deepEqual(reconciled.staleComponents.map((component) => component.key), ["tool:customer_lookup"]);
+      assert.deepEqual(reconciled.plan.added.map((component) => component.key), ["tool:customer_lookup"]);
+      assert.deepEqual(reconciled.plan.noop.map((component) => component.key), ["toolset:account_api", "agent:voice_banking_agent"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("applyPreparedIncrementalDeployment returns noop after remote reconciliation confirms no actionable changes", async () => {
+  const rootPath = createFixture(incrementalFixture());
+
+  try {
+    writeStateFromComponents(rootPath);
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ name: "projects/test/existing" }), { status: 200 })) as typeof fetch;
+
+    try {
+      const prepared = await prepareIncrementalDeployment(rootPath, {
+        projectId: "test-project",
+        location: "us",
+        appId: "demo-app",
+      });
+
+      const result = await applyPreparedIncrementalDeployment(prepared);
+      assert.equal(result.status, "noop");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   } finally {
     cleanupFixture(rootPath);
   }

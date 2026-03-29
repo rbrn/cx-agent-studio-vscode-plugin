@@ -2,6 +2,18 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.11.1 — 2026-03-29
+
+### Fixed
+
+- Incremental CES push now rechecks remote resource existence before trusting local deployment state, so missing remote resources are redeployed instead of being reported as a false no-op
+- Incremental agent deployment now preserves built-in CES tools such as `end_session` instead of rewriting them as app-managed direct tool resource names
+- Full CES package import now excludes import-unsafe root helper files and validates unsupported root-level ZIP members before upload
+
+### Changed
+
+- Incremental deployment failure messages now explain when the target CES app must be bootstrapped first
+
 ## 0.11.0 — 2026-03-28
 
 ### Added
