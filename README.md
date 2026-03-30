@@ -3,7 +3,7 @@
 Real-time validation, packaging, full-app import, incremental resource push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.12.0-green)
+![Version](https://img.shields.io/badge/version-0.12.1-green)
 
 ---
 
@@ -14,13 +14,13 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.12.0.vsix
+code --install-extension releases/ces-package-validator-0.12.1.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
 > ```bash
 > "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
->   --install-extension releases/ces-package-validator-0.12.0.vsix
+>   --install-extension releases/ces-package-validator-0.12.1.vsix
 > ```
 
 ### Option B — VS Code UI
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.12.0.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.12.0.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.12.1.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -147,7 +147,7 @@ npm run bundle         # esbuild bundle only
 ### Test
 
 ```bash
-npm test               # Runs all 105 tests
+npm test               # Runs all 108 tests
 ```
 
 ### Package a new VSIX
@@ -188,7 +188,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.12.0.vsix # Pre-built extension
+│   └── ces-package-validator-0.12.1.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -216,6 +216,14 @@ ces-validate /path/to/agent-package
 ## 📋 Changelog
 
 The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
+
+### 0.12.1 (2026-03-30)
+
+**Env-default precedence and explorer hardening:**
+
+- Repository `.env` defaults now win over stale saved import/push profile values, so `GCP_LOCATION` preloads correctly again
+- Python cache artifacts such as `__pycache__` and `.pyc` no longer generate nesting-warning noise in the explorer
+- Binary resources now fall back to Finder reveal instead of logging text-open failures
 
 ### 0.12.0 (2026-03-30)
 
