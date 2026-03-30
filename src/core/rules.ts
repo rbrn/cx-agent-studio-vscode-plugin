@@ -5,6 +5,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { CALLBACK_KEYS } from "./callbacks";
 import { getDepthBelowTopLevel, isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
 import { validateInstructionStructure } from "./instructionContracts";
 import { findLineContaining, parseJsonFile, parseOpenApiFile } from "./parsers";
@@ -15,15 +16,6 @@ const TOOLSET_DEPTH_LIMIT = 3;
 
 /** CES built-in tools that have no corresponding tools/<name> folder. */
 const BUILTIN_TOOLS = new Set(["end_session"]);
-
-/** All callback keys found in CES agent manifests. */
-const CALLBACK_KEYS = [
-  "afterAgentCallbacks",
-  "beforeModelCallbacks",
-  "afterModelCallbacks",
-  "afterToolCallbacks",
-  "beforeToolCallbacks",
-] as const;
 
 type ManifestImportCompatibilityRule = {
   code: string;

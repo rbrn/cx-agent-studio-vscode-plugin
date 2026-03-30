@@ -2,7 +2,7 @@
   "name": "ces-package-validator",
   "displayName": "CES Package Validator",
   "description": "Real-time validation for Google Customer Engagement Suite / Dialogflow CX Agent Studio package files.",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "publisher": "acmebank",
   "repository": {
     "type": "git",

@@ -7,6 +7,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { collectAgentCallbackEntries, getCallbackFieldLabel } from "./callbacks";
 import { DeploymentPlanStatus, DeploymentRunComponentEntry, DeploymentStatusSummary, loadDeploymentStatusSummary } from "./incrementalDeployment";
 import { buildPackageModel } from "./packageIndex";
 import { runRules } from "./rules";
@@ -267,9 +268,10 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
       }
 
       const referenceChildren = this.buildAgentReferenceNodes(model, tools, toolsetEntries);
+      const callbackChildren = this.buildAgentCallbackNodes(model, agent.name, agent.manifestData, agentIssues);
 
       const issueChildren = agentIssues.filter((i) => !i.code.startsWith("CES_INSTRUCTION")).map((i) => this.issueNode(i));
-      const childNodes = [...instrChildren, ...referenceChildren, ...issueChildren];
+      const childNodes = [...instrChildren, ...referenceChildren, ...callbackChildren, ...issueChildren];
 
       return {
         kind: "agent" as NodeKind,
@@ -506,6 +508,66 @@ export class CesPackageTreeProvider implements vscode.TreeDataProvider<TreeNode>
     }
 
     return children;
+  }
+
+  private buildAgentCallbackNodes(
+    model: PackageModel,
+    agentName: string,
+    manifestData: Record<string, unknown> | null,
+    agentIssues: ValidationIssue[],
+  ): TreeNode[] {
+    const callbackEntries = collectAgentCallbackEntries(model.rootPath, manifestData);
+    if (callbackEntries.length === 0) {
+      return [];
+    }
+
+    const groupedEntries = new Map<string, typeof callbackEntries>();
+    for (const entry of callbackEntries) {
+      const existing = groupedEntries.get(entry.field) ?? [];
+      existing.push(entry);
+      groupedEntries.set(entry.field, existing);
+    }
+
+    const callbackIssueCodes = new Set(["CES_CALLBACK_MISSING_CODE_PATH", "CES_CALLBACK_CODE_MISSING"]);
+
+    return [
+      {
+        kind: "category",
+        label: `Callbacks (${callbackEntries.length})`,
+        description: "click to open callback code",
+        iconId: "run",
+        status: this.statusFromIssues(agentIssues.filter((issue) => callbackIssueCodes.has(issue.code))),
+        children: [...groupedEntries.entries()].map(([field, entries]) => {
+          const fieldIssues = agentIssues.filter((issue) =>
+            callbackIssueCodes.has(issue.code) && issue.message.includes(`Agent '${agentName}' ${field}`),
+          );
+
+          return {
+            kind: "category",
+            label: `${getCallbackFieldLabel(field as Parameters<typeof getCallbackFieldLabel>[0])} (${entries.length})`,
+            description: this.statusBadge(fieldIssues),
+            iconId: "run",
+            status: this.statusFromIssues(fieldIssues),
+            children: entries.map((entry) => {
+              const entryIssues = fieldIssues.filter((issue) => issue.message.includes(`${field}[${entry.index}]`));
+              const displayPath = entry.pythonCodePath ?? "missing pythonCode";
+
+              return {
+                kind: "file",
+                label: `${field}[${entry.index}]`,
+                description: path.basename(displayPath),
+                tooltip: `${getCallbackFieldLabel(entry.field)} #${entry.index + 1}\n${displayPath}`,
+                filePath: entry.resolvedFilePath,
+                line: entry.resolvedFilePath ? 1 : undefined,
+                iconId: "run",
+                status: entryIssues.length > 0 ? this.statusFromIssues(entryIssues) : "pass",
+                children: entryIssues.length > 0 ? entryIssues.map((issue) => this.issueNode(issue)) : undefined,
+              } satisfies TreeNode;
+            }),
+          } satisfies TreeNode;
+        }),
+      },
+    ];
   }
 
   private buildEnvironmentNode(model: PackageModel, issues: ValidationIssue[]): TreeNode {

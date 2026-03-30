@@ -7,6 +7,7 @@ import * as crypto from "crypto";
 import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { CALLBACK_KEYS } from "./callbacks";
 import { DeploymentValidationError } from "./deployment";
 import { buildPackageModel } from "./packageIndex";
 import { normalizeSeparators } from "./pathUtils";
@@ -15,14 +16,6 @@ import { runRules } from "./rules";
 const SCHEMA_VERSION = 1;
 const KIND_ORDER: Record<DeployableComponentKind, number> = { toolset: 0, tool: 1, agent: 2 };
 const BUILTIN_TOOLS = new Set(["end_session"]);
-const CALLBACK_FIELDS = [
-  "beforeAgentCallbacks",
-  "beforeModelCallbacks",
-  "beforeToolCallbacks",
-  "afterAgentCallbacks",
-  "afterModelCallbacks",
-  "afterToolCallbacks",
-] as const;
 const AGENT_ALLOWED_UPDATE_FIELDS = [
   "displayName",
   "description",
@@ -538,7 +531,7 @@ function discoverAgents(rootPath: string): DeployableComponent[] {
       trackedFiles.push(resolveTrackedFile(rootPath, manifest.instruction));
     }
 
-    for (const callbackField of CALLBACK_FIELDS) {
+    for (const callbackField of CALLBACK_KEYS) {
       const callbacks = manifest[callbackField];
       if (!Array.isArray(callbacks)) {
         continue;
@@ -1010,7 +1003,7 @@ function convertAgentManifest(
       });
   }
 
-  for (const callbackField of CALLBACK_FIELDS) {
+  for (const callbackField of CALLBACK_KEYS) {
     if (Array.isArray(payload[callbackField])) {
       payload[callbackField] = payload[callbackField]
         .filter(isRecord)

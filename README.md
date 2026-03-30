@@ -3,7 +3,7 @@
 Real-time validation, packaging, full-app import, incremental resource push, syntax highlighting, and package exploration for **Google Customer Engagement Suite (CES) / Dialogflow CX Agent Studio** packages.
 
 ![VS Code](https://img.shields.io/badge/VS%20Code-%3E%3D1.96-blue)
-![Version](https://img.shields.io/badge/version-0.11.2-green)
+![Version](https://img.shields.io/badge/version-0.12.0-green)
 
 ---
 
@@ -14,13 +14,13 @@ A ready-to-use `.vsix` is checked into the **`releases/`** folder.
 ### Option A — Command line
 
 ```bash
-code --install-extension releases/ces-package-validator-0.11.2.vsix
+code --install-extension releases/ces-package-validator-0.12.0.vsix
 ```
 
 > **Tip:** On macOS if `code` is not on your PATH, use the full path:
 > ```bash
 > "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
->   --install-extension releases/ces-package-validator-0.11.2.vsix
+>   --install-extension releases/ces-package-validator-0.12.0.vsix
 > ```
 
 ### Option B — VS Code UI
@@ -28,7 +28,7 @@ code --install-extension releases/ces-package-validator-0.11.2.vsix
 1. Open VS Code
 2. Press `Cmd+Shift+P` (macOS) / `Ctrl+Shift+P` (Windows/Linux)
 3. Type **"Extensions: Install from VSIX…"**
-4. Navigate to `ces-plugin/releases/ces-package-validator-0.11.2.vsix`
+4. Navigate to `ces-plugin/releases/ces-package-validator-0.12.0.vsix`
 5. Reload window when prompted (`Developer: Reload Window`)
 
 ### Verify installation
@@ -147,7 +147,7 @@ npm run bundle         # esbuild bundle only
 ### Test
 
 ```bash
-npm test               # Runs all 96 tests
+npm test               # Runs all 105 tests
 ```
 
 ### Package a new VSIX
@@ -188,7 +188,7 @@ ces-plugin/
 ├── syntaxes/
 │   └── ces-instruction.tmLanguage.json  # TextMate grammar
 ├── releases/
-│   └── ces-package-validator-0.11.2.vsix # Pre-built extension
+│   └── ces-package-validator-0.12.0.vsix # Pre-built extension
 ├── esbuild.mjs                   # Bundle configuration
 ├── package.json
 └── tsconfig.json
@@ -217,12 +217,14 @@ ces-validate /path/to/agent-package
 
 The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
 
-### 0.11.2 (2026-03-30)
+### 0.12.0 (2026-03-30)
 
-**Packaging and release decoupling fixes:**
+**Callback visibility and packaging hardening:**
 
+- Package Explorer now shows agent callback attachments directly under each agent
+- Callback validation and deployment now share the same callback field list, including `beforeAgentCallbacks`
+- Python tool aliases are recognized consistently across direct-tool inventory and evaluation validation
 - Packaging no longer depends on filename-specific exclusions tied to external helper scripts
-- Release docs now consistently describe standalone validator alignment without pointing at `ces-agent` implementation paths
 
 ### 0.11.1 (2026-03-29)
 

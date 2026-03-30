@@ -7,6 +7,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { execFile } from "child_process";
+import { CALLBACK_KEYS } from "./callbacks";
 import { buildPackageModel } from "./packageIndex";
 import { parseFileByExtension } from "./parsers";
 import { isLikelyInlineGlobalInstruction, normalizeSeparators, toRelativePath } from "./pathUtils";
@@ -14,13 +15,6 @@ import { PackageModel, ValidationIssue } from "./types";
 import { runRules } from "./rules";
 
 const BUILTIN_TOOLS = new Set(["end_session"]);
-const CALLBACK_KEYS = [
-  "afterAgentCallbacks",
-  "beforeModelCallbacks",
-  "afterModelCallbacks",
-  "afterToolCallbacks",
-  "beforeToolCallbacks",
-] as const;
 const ZIP_MAX_BUFFER = 20 * 1024 * 1024;
 
 export interface PackageBundleResult {

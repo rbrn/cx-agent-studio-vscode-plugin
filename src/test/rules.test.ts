@@ -1037,6 +1037,29 @@ test("valid callback pythonCode passes", () => {
   assert.equal(hasCode(issues, "CES_CALLBACK_MISSING_CODE_PATH"), false);
 });
 
+test("beforeAgentCallbacks are validated", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      beforeAgentCallbacks: [
+        {
+          pythonCode: "agents/voice_banking_agent/before_agent_callbacks/missing.py",
+        },
+      ],
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_CALLBACK_CODE_MISSING"), true);
+  const issue = issues.find((i) => i.code === "CES_CALLBACK_CODE_MISSING");
+  assert.ok(issue?.message.includes("beforeAgentCallbacks[0]"));
+});
+
 test("missing callback pythonCode file is reported", () => {
   const files = baseValidFixture();
   files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
