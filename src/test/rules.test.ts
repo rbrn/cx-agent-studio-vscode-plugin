@@ -914,6 +914,32 @@ test("Python function tools are registered as direct tools", () => {
   }
 });
 
+test("Python function tool aliases are registered as direct tools", () => {
+  const files = baseValidFixture();
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "friendly_balance_lookup",
+      pythonFunction: {
+        name: "get_balance_wrapper",
+        pythonCode: "tools/get_balance/get_balance.py",
+      },
+    },
+    null,
+    2,
+  );
+  files["tools/get_balance/get_balance.py"] = "def get_balance(): pass";
+
+  const rootPath = createFixture(files);
+  try {
+    const model = buildPackageModel(rootPath);
+    assert.equal(model.directTools.has("get_balance"), true);
+    assert.equal(model.directTools.has("friendly_balance_lookup"), true);
+    assert.equal(model.directTools.has("get_balance_wrapper"), true);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
 // ── Namespaced OpenAPI operation tests ────────────────────────────────────
 
 test("L-01: namespaced toolCall (toolset.operationId) is caught as OpenAPI operation", () => {
@@ -1582,6 +1608,52 @@ test("scenario eval with valid expectedToolCall passes", () => {
           {
             toolExpectation: {
               expectedToolCall: { tool: "update_cart" },
+            },
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  );
+
+  const issues = runValidation(files);
+  assert.equal(hasCode(issues, "CES_EVALUATION_SCENARIO_TOOL_UNKNOWN"), false);
+});
+
+test("scenario eval with Python tool alias expectedToolCall passes", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/voice_banking_agent.json"] = JSON.stringify(
+    {
+      displayName: "voice_banking_agent",
+      instruction: "agents/voice_banking_agent/instruction.txt",
+      childAgents: ["location_services_agent"],
+      tools: ["end_session"],
+    },
+    null,
+    2,
+  );
+  files["tools/get_balance/get_balance.json"] = JSON.stringify(
+    {
+      displayName: "friendly_balance_lookup",
+      pythonFunction: {
+        name: "get_balance_wrapper",
+        pythonCode: "tools/get_balance/get_balance.py",
+      },
+    },
+    null,
+    2,
+  );
+  files["tools/get_balance/get_balance.py"] = "def get_balance(): pass";
+  files["evaluations/cart_test/cart_test.json"] = JSON.stringify(
+    {
+      displayName: "cart_test",
+      scenario: {
+        task: "Test alias tool lookup",
+        scenarioExpectations: [
+          {
+            toolExpectation: {
+              expectedToolCall: { tool: "get_balance_wrapper" },
             },
           },
         ],

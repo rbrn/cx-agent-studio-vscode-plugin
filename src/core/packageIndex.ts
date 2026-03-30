@@ -312,10 +312,38 @@ function buildToolInventory(
 
   // Python function tools are direct tools
   for (const pythonTool of pythonToolInfos) {
-    directTools.add(pythonTool.name);
+    addPythonToolReferenceNames(directTools, pythonTool);
   }
 
   return { directTools, openApiOperations, openApiNamespacedOperations };
+}
+
+function addPythonToolReferenceNames(target: Set<string>, pythonTool: PythonToolInfo): void {
+  addReferenceName(target, pythonTool.name);
+
+  if (!isRecord(pythonTool.manifestData)) {
+    return;
+  }
+
+  addReferenceName(target, pythonTool.manifestData.displayName);
+
+  const pythonFunction = pythonTool.manifestData.pythonFunction;
+  if (isRecord(pythonFunction)) {
+    addReferenceName(target, pythonFunction.name);
+  }
+}
+
+function addReferenceName(target: Set<string>, value: unknown): void {
+  if (typeof value !== "string") {
+    return;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return;
+  }
+
+  target.add(normalized);
 }
 
 function collectInstructionInfos(rootPath: string, agentInfos: AgentInfo[]): InstructionInfo[] {

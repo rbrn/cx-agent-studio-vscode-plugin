@@ -7,6 +7,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 ### Fixed
 
 - The extension no longer hard-codes external Python helper filenames during packaging, so archive validation remains generic and self-contained
+- Python tool aliases declared via manifest `displayName` and `pythonFunction.name` now flow into the shared direct-tool inventory, keeping scenario/evaluation validation aligned with agent tool validation
 - Release documentation and validation references now describe standalone validator alignment without coupling the plugin to `ces-agent` implementation paths
 
 ### Changed
