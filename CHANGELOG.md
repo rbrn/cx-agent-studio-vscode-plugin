@@ -9,6 +9,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 - The extension no longer hard-codes external Python helper filenames during packaging, so archive validation remains generic and self-contained
 - Python tool aliases declared via manifest `displayName` and `pythonFunction.name` now flow into the shared direct-tool inventory, keeping scenario/evaluation validation aligned with agent tool validation
 - Callback handling now uses a shared field list across validation and deployment, including `beforeAgentCallbacks`, and agent callback attachments are visible in the Package Explorer
+- Python cache artifacts such as `__pycache__` and `.pyc` files are now ignored during package validation, and binary resources fall back to Finder reveal instead of throwing text-open errors
 - Release documentation and validation references now describe standalone validator alignment without coupling the plugin to `ces-agent` implementation paths
 
 ### Changed

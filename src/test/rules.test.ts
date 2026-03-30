@@ -294,6 +294,17 @@ test("deep agents nesting produces warning", () => {
   assert.equal(hasCode(issues, "CES_NESTING_DEPTH_EXCEEDED"), true);
 });
 
+test("python cache artifacts do not produce nesting warnings", () => {
+  const files = baseValidFixture();
+  files["agents/voice_banking_agent/__pycache__/instruction.cpython-314.pyc"] = "compiled";
+
+  const issues = runValidation(files);
+  assert.equal(
+    issues.some((issue) => issue.code === "CES_NESTING_DEPTH_EXCEEDED" && issue.file.includes("__pycache__")),
+    false,
+  );
+});
+
 test("missing guardrail reference is reported", () => {
   const files = baseValidFixture();
   files["app.yaml"] = [

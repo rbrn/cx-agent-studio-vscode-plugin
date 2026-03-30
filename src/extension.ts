@@ -45,6 +45,8 @@ type StoredImportProfile = {
   ignoreAppLock?: boolean;
 };
 
+const BINARY_LIKE_EXTENSIONS = new Set([".pyc", ".pyo", ".zip", ".vsix"]);
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const outputChannel = vscode.window.createOutputChannel("CES Validator");
   context.subscriptions.push(outputChannel);
@@ -80,8 +82,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
 
+        const targetUri = vscode.Uri.file(target.filePath);
         try {
-          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.filePath));
+          const document = await vscode.workspace.openTextDocument(targetUri);
           await vscode.window.showTextDocument(document, {
             preview: false,
             selection: typeof target.line === "number"
@@ -89,6 +92,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               : undefined,
           });
         } catch (err) {
+          if (isLikelyBinaryResource(target.filePath)) {
+            outputChannel.appendLine(`[CES] openResource fallback: revealing non-text file ${target.filePath}`);
+            await vscode.commands.executeCommand("revealFileInOS", targetUri);
+            void vscode.window.showWarningMessage(
+              `Cannot open '${path.basename(target.filePath)}' as text. Revealed it in Finder instead.`,
+            );
+            return;
+          }
+
           outputChannel.appendLine(`[CES] openResource error: ${err}`);
         }
       }),
@@ -402,6 +414,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   // No-op. VS Code disposes registrations via context subscriptions.
+}
+
+function isLikelyBinaryResource(filePath: string): boolean {
+  if (filePath.includes(`${path.sep}__pycache__${path.sep}`)) {
+    return true;
+  }
+
+  return BINARY_LIKE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
 async function resolveTargetPackageRoot(orchestrator: ValidationOrchestrator): Promise<string | null> {

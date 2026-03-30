@@ -10,6 +10,8 @@ import { parseInstructionFile } from "./instructionParser";
 import { AgentInfo, EvaluationInfo, InstructionInfo, PackageModel, PythonToolInfo, ToolsetInfo } from "./types";
 
 const SCHEMA_EXTENSIONS = new Set([".yaml", ".yml", ".json"]);
+const IGNORED_DIRECTORY_NAMES = new Set(["__pycache__"]);
+const IGNORED_FILE_EXTENSIONS = new Set([".pyc", ".pyo"]);
 
 export function buildPackageModel(rootPath: string): PackageModel {
   const appYamlPath = path.join(rootPath, "app.yaml");
@@ -167,7 +169,7 @@ function collectImmediateDirectories(rootPath: string): string[] {
 
   return fs
     .readdirSync(rootPath, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !shouldIgnorePackageEntry(entry.name, true))
     .map((entry) => path.join(rootPath, entry.name));
 }
 
@@ -178,6 +180,10 @@ function collectPaths(rootPath: string, files: string[], directories: string[]):
 
   const entries = fs.readdirSync(rootPath, { withFileTypes: true });
   for (const entry of entries) {
+    if (shouldIgnorePackageEntry(entry.name, entry.isDirectory())) {
+      continue;
+    }
+
     const absolutePath = path.join(rootPath, entry.name);
     if (entry.isDirectory()) {
       directories.push(absolutePath);
@@ -196,11 +202,21 @@ function readDirectoryEntries(rootPath: string): Array<{ name: string; isFile: b
     return [];
   }
 
-  return fs.readdirSync(rootPath, { withFileTypes: true }).map((entry) => ({
-    name: entry.name,
-    isFile: entry.isFile(),
-    isDirectory: entry.isDirectory(),
-  }));
+  return fs.readdirSync(rootPath, { withFileTypes: true })
+    .filter((entry) => !shouldIgnorePackageEntry(entry.name, entry.isDirectory()))
+    .map((entry) => ({
+      name: entry.name,
+      isFile: entry.isFile(),
+      isDirectory: entry.isDirectory(),
+    }));
+}
+
+function shouldIgnorePackageEntry(name: string, isDirectory: boolean): boolean {
+  if (isDirectory) {
+    return IGNORED_DIRECTORY_NAMES.has(name);
+  }
+
+  return IGNORED_FILE_EXTENSIONS.has(path.extname(name).toLowerCase());
 }
 
 function collectEvaluationInfos(rootPath: string): EvaluationInfo[] {
