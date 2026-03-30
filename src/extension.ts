@@ -5,6 +5,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { loadDeploymentEnvDefaults } from "./core/envDefaults";
 import { DeploymentValidationError, CesImportOptions, importPackageToCes, packageCesPackage } from "./core/deployment";
 import {
   IncrementalCesTargetOptions,
@@ -595,7 +596,13 @@ function handleCommandError(error: unknown, outputChannel: vscode.OutputChannel)
 }
 
 function getStoredImportProfile(context: vscode.ExtensionContext, rootPath: string): StoredImportProfile {
-  return context.workspaceState.get<StoredImportProfile>(`cesValidator.importProfile:${rootPath}`, {});
+  const workspaceRoot = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(rootPath))?.uri.fsPath;
+  const envDefaults = loadDeploymentEnvDefaults(rootPath, workspaceRoot);
+  const storedProfile = context.workspaceState.get<StoredImportProfile>(`cesValidator.importProfile:${rootPath}`, {});
+  return {
+    ...envDefaults,
+    ...storedProfile,
+  };
 }
 
 function saveImportProfile(context: vscode.ExtensionContext, rootPath: string, options: CesImportOptions): void {
