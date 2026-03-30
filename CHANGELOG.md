@@ -10,6 +10,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 - Python tool aliases declared via manifest `displayName` and `pythonFunction.name` now flow into the shared direct-tool inventory, keeping scenario/evaluation validation aligned with agent tool validation
 - Callback handling now uses a shared field list across validation and deployment, including `beforeAgentCallbacks`, and agent callback attachments are visible in the Package Explorer
 - Python cache artifacts such as `__pycache__` and `.pyc` files are now ignored during package validation, and binary resources fall back to Finder reveal instead of throwing text-open errors
+- Repository `.env` deployment defaults now take precedence over stale saved import/push profile values, so `GCP_LOCATION` and related CES defaults preload correctly
 - Release documentation and validation references now describe standalone validator alignment without coupling the plugin to `ces-agent` implementation paths
 
 ### Changed

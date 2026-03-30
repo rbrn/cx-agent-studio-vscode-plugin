@@ -6,7 +6,7 @@
 import { strict as assert } from "assert";
 import * as path from "path";
 import test from "node:test";
-import { loadDeploymentEnvDefaults, parseDotEnv } from "../core/envDefaults";
+import { loadDeploymentEnvDefaults, mergeDeploymentDefaults, parseDotEnv } from "../core/envDefaults";
 import { cleanupFixture, createFixture } from "./helpers";
 
 test("parseDotEnv ignores comments and preserves key value pairs", () => {
@@ -68,4 +68,47 @@ test("loadDeploymentEnvDefaults falls back to searching parent directories for .
   } finally {
     cleanupFixture(workspaceRoot);
   }
+});
+
+test("mergeDeploymentDefaults prefers defined .env values over stored profile values", () => {
+  const merged = mergeDeploymentDefaults(
+    {
+      projectId: "old-project",
+      location: "us",
+      appId: "old-app",
+      displayName: "existing-display",
+    },
+    {
+      projectId: "voice-banking-poc",
+      location: "eu",
+    },
+  );
+
+  assert.deepEqual(merged, {
+    projectId: "voice-banking-poc",
+    location: "eu",
+    appId: "old-app",
+    displayName: "existing-display",
+  });
+});
+
+test("mergeDeploymentDefaults does not erase stored values when .env omits a field", () => {
+  const merged = mergeDeploymentDefaults(
+    {
+      projectId: "old-project",
+      location: "us",
+      appId: "old-app",
+    },
+    {
+      projectId: "voice-banking-poc",
+      location: undefined,
+      appId: undefined,
+    },
+  );
+
+  assert.deepEqual(merged, {
+    projectId: "voice-banking-poc",
+    location: "us",
+    appId: "old-app",
+  });
 });

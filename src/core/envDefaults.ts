@@ -12,6 +12,18 @@ export interface DeploymentEnvDefaults {
   appId?: string;
 }
 
+export function mergeDeploymentDefaults<T extends Record<string, unknown>>(storedProfile: T, envDefaults: Partial<T>): T {
+  const merged = { ...storedProfile };
+
+  for (const [key, value] of Object.entries(envDefaults)) {
+    if (value !== undefined) {
+      merged[key as keyof T] = value as T[keyof T];
+    }
+  }
+
+  return merged;
+}
+
 export function loadDeploymentEnvDefaults(packageRoot: string, workspaceRoot?: string): DeploymentEnvDefaults {
   const envPath = resolveEnvFile(packageRoot, workspaceRoot);
   if (!envPath) {
