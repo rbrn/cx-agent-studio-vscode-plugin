@@ -244,7 +244,7 @@ export async function packageCesPackage(rootPath: string): Promise<PackageBundle
 
   fs.rmSync(zipFile, { force: true });
 
-  await runCommand("zip", ["-r", zipFile, packageName, "-x", `${packageName}/validate-package.py`, `${packageName}/**/__pycache__/*`], path.dirname(rootPath));
+  await runCommand("zip", ["-r", zipFile, packageName, "-x", `${packageName}/**/__pycache__/*`], path.dirname(rootPath));
   fs.copyFileSync(zipFile, latestZipFile);
 
   const archiveEntries = await listArchiveEntries(zipFile);

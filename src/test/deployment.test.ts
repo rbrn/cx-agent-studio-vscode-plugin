@@ -131,7 +131,7 @@ test("collectRequiredArchiveMembers resolves direct tool displayName aliases to 
 test("findUnsupportedRootArchiveMembers reports import-unsafe root files", () => {
   const rootPath = createFixture({
     ...baseDeploymentFixture(),
-    "validate-package.py": "print('helper')\n",
+    "helper.py": "print('helper')\n",
   });
 
   try {
@@ -144,10 +144,10 @@ test("findUnsupportedRootArchiveMembers reports import-unsafe root files", () =>
       `${packageName}/agents/voice_banking_agent/instruction.txt`,
       `${packageName}/tools/customer_lookup/customer_lookup.json`,
       `${packageName}/tools/customer_lookup/python_code.py`,
-      `${packageName}/validate-package.py`,
+      `${packageName}/helper.py`,
     ]);
 
-    assert.deepEqual(unsupported, [`${packageName}/validate-package.py`]);
+    assert.deepEqual(unsupported, [`${packageName}/helper.py`]);
   } finally {
     cleanupFixture(rootPath);
   }

@@ -8,7 +8,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 
 - Incremental CES push now rechecks remote resource existence before trusting local deployment state, so missing remote resources are redeployed instead of being reported as a false no-op
 - Incremental agent deployment now preserves built-in CES tools such as `end_session` instead of rewriting them as app-managed direct tool resource names
-- Full CES package import now excludes import-unsafe root helper files and validates unsupported root-level ZIP members before upload
+- Full CES package import now validates unsupported root-level ZIP members before upload instead of depending on filename-specific exclusions
 
 ### Changed
 
@@ -59,7 +59,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 
 ### Changed
 
-- The extension now validates CES instruction files against the same contract model used by the Python package validator
+- The extension now validates CES instruction files against the same contract model used by the standalone package validator
 - Instruction reference diagnostics are now scoped to each owning agent inventory instead of the package-wide tool inventory
 
 ## 0.9.1 — 2026-03-24
@@ -110,7 +110,7 @@ All notable changes to `ces-package-validator` are documented in this file.
 ### Changed
 
 - `environment.json` with only `app` is now accepted without requiring `toolsets`
-- `validate-package.py` was updated with matching environment validation coverage
+- Standalone package validation coverage was updated to match the extension's environment checks
 
 ## 0.6.0 — 2026-02-12
 

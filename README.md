@@ -302,11 +302,11 @@ The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
 - **`$env_var` placeholder validation** — CES replaces managed fields with `"$env_var"` during export; if any manifest contains these placeholders but no `environment.json` exists, import will fail
   - `CES_ENV_VAR_NO_ENVIRONMENT` — manifest has `$env_var` placeholder(s) without environment.json
 
-**Also updated in `validate-package.py`:** checks 13 (enhanced env.json validation) and 14 (new `$env_var` placeholder scanning) added with identical coverage.
+**Coverage alignment:** checks 13 (enhanced env.json validation) and 14 (new `$env_var` placeholder scanning) were added to match the standalone package validator.
 
 ### 0.6.0 (2026-02-12)
 
-**New rules — parity with `validate-package.py` gap analysis (sample app coverage):**
+**New rules — aligned with standalone validator gap analysis (sample app coverage):**
 
 - **Agent callback pythonCode validation** — validates all 5 callback types (`afterAgentCallbacks`, `beforeModelCallbacks`, `afterModelCallbacks`, `afterToolCallbacks`, `beforeToolCallbacks`)
   - `CES_CALLBACK_CODE_MISSING` — referenced `.py` callback file does not exist
@@ -323,7 +323,7 @@ The full release history also lives in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ### 0.5.0 (2026-02-09)
 
-**New rules — parity with `validate-package.py`:**
+**New rules — aligned with standalone validator coverage:**
 
 - **Python function tools** (`tools/` directory) — validates `pythonFunction.pythonCode` file exists
   - `CES_PYTHON_TOOL_MANIFEST_INVALID` — invalid manifest JSON

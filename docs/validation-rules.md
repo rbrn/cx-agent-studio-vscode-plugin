@@ -1,10 +1,10 @@
 # CES Package Validation Rules — Complete Reference
 
-> **Auto-generated from source:** `ces-plugin/src/core/rules.ts` (v0.8.0) and `ces-agent/scripts/validate-package.py`
+> **Auto-generated from source:** `ces-plugin/src/core/rules.ts` (v0.8.0) and the standalone CES package validator rule set
 >
 > Last updated: 2026-03-12
 
-This document is the single source of truth for every validation check performed by the **CES Package Validator VS Code Extension** and the **standalone Python validation script**. Both tools aim for parity — where a check exists in one but not the other, it is noted.
+This document is the single source of truth for every validation check performed by the **CES Package Validator VS Code Extension** and the **standalone CES package validator**. Both tools aim for parity — where a check exists in one but not the other, it is noted.
 
 ---
 
