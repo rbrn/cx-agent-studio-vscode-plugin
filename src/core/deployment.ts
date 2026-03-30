@@ -197,24 +197,7 @@ export function findUnsupportedRootArchiveMembers(rootPath: string, archiveEntri
     }
   }
 
-  const manifestBasename = model.manifestPath ? path.basename(model.manifestPath) : "app.yaml";
-  const allowedRootEntries = new Set([
-    manifestBasename,
-    "environment.json",
-    "agents",
-    "tools",
-    "toolsets",
-    "guardrails",
-    "evaluations",
-  ]);
-
-  const globalInstruction = model.manifestData?.globalInstruction;
-  if (typeof globalInstruction === "string" && !isLikelyInlineGlobalInstruction(globalInstruction)) {
-    const normalizedInstruction = normalizeSeparators(globalInstruction.trim());
-    if (normalizedInstruction.length > 0 && !normalizedInstruction.includes("/")) {
-      allowedRootEntries.add(normalizedInstruction);
-    }
-  }
+  const allowedRootEntries = getAllowedRootEntries(model);
 
   const prefix = `${packageName}/`;
   const unsupported: string[] = [];
@@ -235,16 +218,51 @@ export function findUnsupportedRootArchiveMembers(rootPath: string, archiveEntri
   return unsupported.sort();
 }
 
+function listUnsupportedRootSourceMembers(rootPath: string): string[] {
+  const packageName = path.basename(rootPath);
+  const sourceEntries = fs.readdirSync(rootPath).map((entryName) => `${packageName}/${normalizeSeparators(entryName)}`);
+  return findUnsupportedRootArchiveMembers(rootPath, [`${packageName}/`, ...sourceEntries]);
+}
+
+function getAllowedRootEntries(model: PackageModel): Set<string> {
+  const manifestBasename = model.manifestPath ? path.basename(model.manifestPath) : "app.yaml";
+  const allowedRootEntries = new Set([
+    manifestBasename,
+    "environment.json",
+    "agents",
+    "tools",
+    "toolsets",
+    "guardrails",
+    "evaluations",
+  ]);
+
+  const globalInstruction = model.manifestData?.globalInstruction;
+  if (typeof globalInstruction === "string" && !isLikelyInlineGlobalInstruction(globalInstruction)) {
+    const normalizedInstruction = normalizeSeparators(globalInstruction.trim());
+    if (normalizedInstruction.length > 0 && !normalizedInstruction.includes("/")) {
+      allowedRootEntries.add(normalizedInstruction);
+    }
+  }
+
+  return allowedRootEntries;
+}
+
 export async function packageCesPackage(rootPath: string): Promise<PackageBundleResult> {
   const validationIssues = validatePackageForDeployment(rootPath);
   const packageName = path.basename(rootPath);
   const version = formatTimestamp(new Date());
   const zipFile = path.join(path.dirname(rootPath), `${packageName}-${version}.zip`);
   const latestZipFile = path.join(path.dirname(rootPath), `${packageName}.zip`);
+  const unsupportedRootMembers = listUnsupportedRootSourceMembers(rootPath);
 
   fs.rmSync(zipFile, { force: true });
 
-  await runCommand("zip", ["-r", zipFile, packageName, "-x", `${packageName}/**/__pycache__/*`], path.dirname(rootPath));
+  const zipArgs = ["-r", zipFile, packageName, "-x", `${packageName}/**/__pycache__/*`];
+  for (const unsupportedMember of unsupportedRootMembers) {
+    zipArgs.push(unsupportedMember, `${unsupportedMember}/*`, `${unsupportedMember}/**`);
+  }
+
+  await runCommand("zip", zipArgs, path.dirname(rootPath));
   fs.copyFileSync(zipFile, latestZipFile);
 
   const archiveEntries = await listArchiveEntries(zipFile);

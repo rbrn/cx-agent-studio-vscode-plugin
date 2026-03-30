@@ -4,9 +4,42 @@
  */
 
 import { strict as assert } from "assert";
+import { execFileSync } from "child_process";
 import test from "node:test";
-import { collectRequiredArchiveMembers, findMissingArchiveMembers, findUnsupportedRootArchiveMembers } from "../core/deployment";
+import { collectRequiredArchiveMembers, findMissingArchiveMembers, findUnsupportedRootArchiveMembers, packageCesPackage } from "../core/deployment";
 import { cleanupFixture, createFixture } from "./helpers";
+
+function validGlobalInstructionFixture(): string {
+  return [
+    "<persona>",
+    "Global banking persona.",
+    "</persona>",
+    "<constraints>",
+    "1. Stay concise.",
+    "</constraints>",
+  ].join("\n");
+}
+
+function validAgentInstructionFixture(): string {
+  return [
+    "<role>",
+    "Handle the request.",
+    "</role>",
+    "<persona>",
+    "Helpful and concise.",
+    "</persona>",
+    "<constraints>",
+    "1. Stay in scope.",
+    "</constraints>",
+    "<taskflow>",
+    "<subtask name=\"Main\">",
+    "<step name=\"Help\">",
+    "<action>Assist the user.</action>",
+    "</step>",
+    "</subtask>",
+    "</taskflow>",
+  ].join("\n");
+}
 
 function baseDeploymentFixture(): Record<string, string> {
   return {
@@ -17,7 +50,7 @@ function baseDeploymentFixture(): Record<string, string> {
       "guardrails: []",
       "",
     ].join("\n"),
-    "global_instruction.txt": "Global instruction text for package.",
+    "global_instruction.txt": validGlobalInstructionFixture(),
     "agents/voice_banking_agent/voice_banking_agent.json": JSON.stringify(
       {
         displayName: "voice_banking_agent",
@@ -27,7 +60,7 @@ function baseDeploymentFixture(): Record<string, string> {
       null,
       2,
     ),
-    "agents/voice_banking_agent/instruction.txt": "<role>Root agent</role>",
+    "agents/voice_banking_agent/instruction.txt": validAgentInstructionFixture(),
     "tools/customer_lookup/customer_lookup.json": JSON.stringify(
       {
         displayName: "customer_lookup",
@@ -52,7 +85,7 @@ function aliasedToolDeploymentFixture(): Record<string, string> {
       "guardrails: []",
       "",
     ].join("\n"),
-    "global_instruction.txt": "Global instruction text for package.",
+    "global_instruction.txt": validGlobalInstructionFixture(),
     "agents/voice_banking_agent/voice_banking_agent.json": JSON.stringify(
       {
         displayName: "voice_banking_agent",
@@ -62,7 +95,7 @@ function aliasedToolDeploymentFixture(): Record<string, string> {
       null,
       2,
     ),
-    "agents/voice_banking_agent/instruction.txt": "<role>Root agent</role>",
+    "agents/voice_banking_agent/instruction.txt": validAgentInstructionFixture(),
     "tools/customer_lookup/customer_lookup.json": JSON.stringify(
       {
         displayName: "customer_lookup_wrapper",
@@ -148,6 +181,26 @@ test("findUnsupportedRootArchiveMembers reports import-unsafe root files", () =>
     ]);
 
     assert.deepEqual(unsupported, [`${packageName}/helper.py`]);
+  } finally {
+    cleanupFixture(rootPath);
+  }
+});
+
+test("packageCesPackage excludes unsupported root helper files from the archive", async () => {
+  const rootPath = createFixture({
+    ...baseDeploymentFixture(),
+    "validate-package.py": "print('helper')\n",
+  });
+
+  try {
+    const result = await packageCesPackage(rootPath);
+    const archiveEntries = execFileSync("unzip", ["-Z1", result.zipFile], { encoding: "utf8" })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const packageName = rootPath.split(/[\\/]/).pop() ?? "package";
+    assert.equal(archiveEntries.includes(`${packageName}/validate-package.py`), false);
   } finally {
     cleanupFixture(rootPath);
   }
