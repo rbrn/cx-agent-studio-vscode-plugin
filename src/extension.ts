@@ -553,7 +553,7 @@ async function promptForCesPushOptions(
   const location = await vscode.window.showInputBox({
     title: "Incremental CES Push",
     prompt: "CES location (for example: us or eu)",
-    value: defaults.location ?? "us",
+    value: defaults.location ?? "eu",
     ignoreFocusOut: true,
     validateInput: (value) => value.trim().length > 0 ? undefined : "Location is required.",
   });

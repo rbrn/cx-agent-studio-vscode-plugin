@@ -2,6 +2,17 @@
 
 All notable changes to `ces-package-validator` are documented in this file.
 
+## 0.11.2 — 2026-03-30
+
+### Fixed
+
+- The extension no longer hard-codes external Python helper filenames during packaging, so archive validation remains generic and self-contained
+- Release documentation and validation references now describe standalone validator alignment without coupling the plugin to `ces-agent` implementation paths
+
+### Changed
+
+- Packaged VSIX references and release documentation now point to the `0.11.2` artifact
+
 ## 0.11.1 — 2026-03-29
 
 ### Fixed
